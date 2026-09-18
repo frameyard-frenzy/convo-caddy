@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { SETUP_HTML } from "../../src/desktop/setup-page.js";
+import { renderSetupGuide } from "../../src/desktop/setup-guide.js";
 const readme = readFileSync("README.md", "utf8");
 const people =
   readme.split("## For people")[1]?.split("## For agents")[0] ?? "";
@@ -17,7 +18,12 @@ describe("installer-first first-time onboarding", () => {
   it("has a pitch, concise requirements and GUI installation with an honest release gate", () => {
     expect(readme.split("## For people")[0]).toContain("interview questions");
     expect(people).toContain("### Requirements");
-    expect(people).toContain("No installer is currently published");
+    expect(people).toContain(
+      "https://github.com/frameyard-frenzy/convo-caddy/releases/tag/v0.1.0",
+    );
+    expect(people).toContain("Convo-Caddy-0.1.0-arm64.dmg");
+    expect(people).toContain("unnotarized alpha");
+    expect(people).toContain("not Developer ID signed or notarized by Apple");
     ordered(people, [
       "### Install",
       "Download",
@@ -81,6 +87,20 @@ describe("installer-first first-time onboarding", () => {
     expect(people).toContain(
       "Node, curl and Caddy’s Electron runtime can report different symptoms",
     );
+    expect(people).not.toContain(
+      "For callback failures, recheck the hostname, authtoken",
+    );
+    const bundled = readFileSync("docs/hermes-connection-setup.md", "utf8");
+    const renderedBundled = renderSetupGuide(bundled);
+    for (const phrase of [
+      "Copy diagnostic summary",
+      "another trusted network",
+      "does not prove Recall delivery",
+      "older wording",
+      "do not reset credentials",
+    ])
+      for (const surface of [bundled, renderedBundled])
+        expect(surface).toContain(phrase);
   });
   it("ends the human guide with the shipped graphical uninstall choices", () => {
     const uninstall = people.split("### Uninstall")[1] ?? "";

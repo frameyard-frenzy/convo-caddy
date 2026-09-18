@@ -334,6 +334,9 @@ const TRANSPORT_CODES: Readonly<Record<string, CallbackDiagnostic["code"]>> = {
   ERR_SSL_WRONG_VERSION_NUMBER: "tls_protocol_failed",
   ERR_TLS_PROTOCOL_VERSION_CONFLICT: "tls_protocol_failed",
   EPROTO: "tls_protocol_failed",
+  ETIMEDOUT: "timeout",
+  UND_ERR_CONNECT_TIMEOUT: "timeout",
+  UND_ERR_HEADERS_TIMEOUT: "timeout",
   ECONNREFUSED: "connection_refused",
   ECONNRESET: "connection_reset",
   ENETUNREACH: "network_unreachable",
@@ -364,12 +367,23 @@ function classifyTransportError(error: unknown): CallbackDiagnostic["code"] {
     if (depth >= 5) continue;
     const cause = safeProperty(value, "cause");
     if (cause !== undefined) queue.push({ value: cause, depth: depth + 1 });
-    const errors = safeProperty(value, "errors");
-    if (Array.isArray(errors))
-      for (const nested of errors.slice(0, 8))
-        queue.push({ value: nested, depth: depth + 1 });
+    for (const nested of safeArrayValues(safeProperty(value, "errors"), 8))
+      queue.push({ value: nested, depth: depth + 1 });
   }
   return "connect_failed";
+}
+
+function safeArrayValues(value: unknown, limit: number): unknown[] {
+  const values: unknown[] = [];
+  try {
+    if (!Array.isArray(value)) return values;
+    const length = Math.min(value.length, limit);
+    for (let index = 0; index < length; index++)
+      values.push(safeProperty(value, String(index)));
+  } catch {
+    return values;
+  }
+  return values;
 }
 
 function safeProperty(value: object, key: string): unknown {

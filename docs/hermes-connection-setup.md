@@ -4,6 +4,14 @@ This Markdown guide covers every field in Caddy's Hermes section. Jump to [This 
 
 Complete Recall and ngrok first, including their dashboard webhook/events and **Test Recall & ngrok**, as described in README. Use the Caddy copy in **Applications** from README — Install. The matching installer includes the readable Python helpers used here. Run helper commands in the interview Mac's **LOCAL Terminal**, not inside an interactive SSH session on the Hermes Mac. If the prompt shows the remote Mac (for example, your Mini), type `exit` to return to the laptop before continuing.
 
+### If the public callback check fails
+
+Read the four component results in order and use **Copy diagnostic summary**. If Recall authentication passed, keep its entered keys. If the local callback and exact ngrok endpoint also passed, keep the ngrok authtoken and stable domain while investigating the public network route. Check network-security history and compare once on another trusted network; on a managed network, give the secret-free summary to its administrator. Certificate failures require checking the Mac’s clock and certificate policy, never bypassing certificate verification. Do not disable protection globally, dump credentials, reset credentials, or retry until green.
+
+This Mac-to-public-tunnel-to-local-listener check does not prove Recall delivery, dashboard event selections or provider retention. Caddy closes the temporary tunnel after the check, so a later offline HTTP result is different from a failure during the app test. Node, curl and Caddy’s Electron runtime may report different symptoms; ordinary onboarding does not require those developer tools.
+
+If Connection Settings shows older wording and no **Copy diagnostic summary** after a test, identify that as an older running Caddy copy. Preserve its draft, do not reset credentials or delete app data, and use its installed guidance until a separately approved matching update is available.
+
 **Review-candidate note:** the older DMG built from `0b746cc` predates `enroll-hermes-key.py`; no PR #45 package exists yet. Reading this branch's guide does not update your installed app. If its helpers are missing, stop and wait for the matching candidate/new installer through a separately authorized installation. Do not inject scripts into the app's resources or modify a signed app. Step 2 checks installed helper readiness before remote setup.
 
 Only the human runs credential transfer; never put credentials in chat, screenshots or agent output. Opening or closing this guide preserves your unsaved form.

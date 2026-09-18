@@ -138,9 +138,47 @@ function diagnosticToken(check) {
     const allowedStates = new Set(["verified_synthetic","verified_exact_domain","failed"]);
     return allowedStates.has(check.state) ? check.state : "failed [connect_failed]";
   }
+  const code = safeDiagnosticCode(check.diagnostic);
+  if (code === "http_status") return "failed [http_status; HTTP " + check.diagnostic.httpStatus + "]";
+  return "failed [" + code + "]";
+}
+function safeDiagnosticCode(diagnostic) {
   const allowed = new Set(["timeout","dns_failed","tls_certificate_failed","tls_protocol_failed","connection_refused","connection_reset","network_unreachable","connect_failed","not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]);
-  if (check.diagnostic.code === "http_status" && Number.isInteger(check.diagnostic.httpStatus) && check.diagnostic.httpStatus >= 100 && check.diagnostic.httpStatus <= 599) return "failed [http_status; HTTP " + check.diagnostic.httpStatus + "]";
-  return "failed [" + (allowed.has(check.diagnostic.code) ? check.diagnostic.code : "connect_failed") + "]";
+  if (diagnostic?.code === "http_status" && Number.isInteger(diagnostic.httpStatus) && diagnostic.httpStatus >= 100 && diagnostic.httpStatus <= 599) return "http_status";
+  return allowed.has(diagnostic?.code) ? diagnostic.code : "connect_failed";
+}
+function callbackReportResult(value) {
+  if (value.publicWebhook.state === "verified_synthetic") return "Result: the signed synthetic public callback reached Caddy through the temporary public tunnel.";
+  const publicCode = safeDiagnosticCode(value.publicWebhook.diagnostic);
+  if (publicCode === "not_attempted") return "Result: the public callback was not attempted because ngrok endpoint setup failed.";
+  return "Result: Caddy attempted the signed synthetic public callback through the temporary public tunnel, but the route was not verified.";
+}
+function callbackReportNextAction(value) {
+  if (value.recallCredentials.state !== "authenticated_read_only") return "Next action: resolve the Recall credential result shown above before relying on the complete connection check. Do not share or dump credentials.";
+  if (value.localWebhook.state !== "verified_synthetic") return "Next action: retry the local callback listener once. If it repeats, share this secret-free report for local listener troubleshooting.";
+  if (value.ngrokEndpoint.state !== "verified_exact_domain") return "Next action: check the ngrok authtoken, stable domain and domain ownership. Do not stop an unfamiliar process or reset unrelated credentials.";
+  if (value.publicWebhook.state === "verified_synthetic") return "Next action: no callback recovery is needed for this synthetic check. Confirm Recall dashboard event selections separately.";
+  const code = safeDiagnosticCode(value.publicWebhook.diagnostic);
+  const actions = {
+    http_status: "Next action: check that the actual running Caddy copy owns the ngrok domain and that no redirect or access-policy page intercepts it.",
+    timeout: "Next action: check this Mac’s connectivity and ngrok availability, then compare once on another trusted network.",
+    dns_failed: "Next action: check this Mac’s DNS connectivity, then compare once on another trusted network.",
+    tls_certificate_failed: "Next action: check this Mac’s clock and the trusted or managed-network certificate policy. Do not bypass certificate verification.",
+    tls_protocol_failed: "Next action: check network-security history or ask the managed-network administrator, then compare once on another trusted network. Filtering is possible, not proven.",
+    connection_refused: "Next action: check ngrok status and domain ownership for the actual running Caddy copy.",
+    connection_reset: "Next action: check network-security history or ask the managed-network administrator, then compare once on another trusted network. Filtering is possible, not proven.",
+    network_unreachable: "Next action: check this Mac’s network route, then compare once on another trusted network.",
+    connect_failed: "Next action: check DNS, network and ngrok availability, then compare once on another trusted network if the cause remains unclear.",
+    not_attempted: "Next action: resolve the earlier endpoint failure before testing the public callback.",
+    ngrok_start_failed: "Next action: check the ngrok authtoken, stable domain and domain ownership.",
+    ngrok_domain_mismatch: "Next action: check the assigned stable domain before retrying.",
+    local_listener_failed: "Next action: retry the local listener once, then share this secret-free report if it repeats."
+  };
+  return actions[code] || actions.connect_failed;
+}
+function callbackReportLimits(value) {
+  const base = "Limits: no bot was created; this does not prove Recall delivery, dashboard event selections, or provider retention.";
+  return value.ngrokEndpoint.state === "verified_exact_domain" ? base + " The temporary tunnel closes after the test, so a later offline HTTP result is not this test failing." : base;
 }
 function showCallbackReport(value) {
   const recallStates = new Set(["authenticated_read_only","authentication_rejected","unavailable"]);
@@ -150,9 +188,10 @@ function showCallbackReport(value) {
     "Local callback: " + diagnosticToken(value.localWebhook),
     "ngrok endpoint: " + diagnosticToken(value.ngrokEndpoint),
     "Public callback: " + diagnosticToken(value.publicWebhook),
-    "Boundary: this Mac sent a signed synthetic HTTPS callback through the temporary public tunnel to its local listener.",
-    "Limits: no bot was created; this does not prove Recall delivery, dashboard event selections, or provider retention. The tunnel closes after the test, so a later offline HTTP result is not this test failing.",
-    "Next: follow the failed component’s guidance. If the first three components passed, keep the entered keys and compare the route once on another trusted network; check network-security history or ask a managed-network administrator. Do not bypass certificate checks, disable protection globally, dump credentials, or retry until green."
+    callbackReportResult(value),
+    callbackReportLimits(value),
+    callbackReportNextAction(value),
+    "Safety: do not disable protection globally, dump credentials, or retry until green."
   ].join("\\n");
   callbackReportPanel.hidden = false;
 }

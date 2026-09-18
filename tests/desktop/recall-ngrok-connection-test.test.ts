@@ -156,6 +156,9 @@ describe("Recall and ngrok component test", () => {
     ["TypeError", "ECONNREFUSED", "connection_refused"],
     ["TypeError", "ECONNRESET", "connection_reset"],
     ["TypeError", "ENETUNREACH", "network_unreachable"],
+    ["TypeError", "UND_ERR_CONNECT_TIMEOUT", "timeout"],
+    ["TypeError", "UND_ERR_HEADERS_TIMEOUT", "timeout"],
+    ["TypeError", "ETIMEDOUT", "timeout"],
     ["TypeError", "PRIVATE_TOKEN_123", "connect_failed"],
   ] as const)(
     "classifies public %s/%s as %s without exposing the native code",
@@ -195,6 +198,31 @@ describe("Recall and ngrok component test", () => {
       diagnostic: { code: "connection_reset" },
     });
     expect(JSON.stringify(result)).not.toContain("PRIVATE_SECRET");
+  });
+
+  it("contains a hostile AggregateError array getter and returns the safe fallback", async () => {
+    const errors: unknown[] = [];
+    Object.defineProperty(errors, "0", {
+      get() {
+        throw new Error("private getter value");
+      },
+    });
+    errors.length = 1;
+    const thrown = Object.assign(new Error("private aggregate"), { errors });
+    const harness = createHarness({ publicThrown: thrown });
+    const result = await new RecallNgrokConnectionTester({
+      fetchImpl: harness.fetchImpl,
+      ngrokAdapter: harness.ngrokAdapter,
+    }).test(input);
+    expect(result.localWebhook).toEqual({ state: "verified_synthetic" });
+    expect(result.ngrokEndpoint).toEqual({ state: "verified_exact_domain" });
+    expect(result.publicWebhook).toEqual({
+      state: "failed",
+      diagnostic: { code: "connect_failed" },
+    });
+    expect(JSON.stringify(result)).not.toMatch(
+      /private getter|private aggregate/,
+    );
   });
   it("marks public POST not attempted when endpoint startup fails", async () => {
     const harness = createHarness({ ngrokFailure: true });

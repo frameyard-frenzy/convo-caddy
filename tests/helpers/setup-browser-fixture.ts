@@ -112,6 +112,7 @@ async function createFixture(
   let callbackDiagnostic:
     | import("../../src/server/desktop/recall-ngrok-connection-test.js").CallbackDiagnostic
     | null = null;
+  let ngrokStartupFailure = false;
   let nativeFailure: "denied" | "timeout" | "mismatch" | null = null;
   const storage = new ConnectionStorage({
     paths,
@@ -371,10 +372,17 @@ async function createFixture(
               generation: input.generation,
               recallCredentials: { state: "authenticated_read_only" },
               localWebhook: { state: "verified_synthetic" },
-              ngrokEndpoint: { state: "verified_exact_domain" },
-              publicWebhook: callbackDiagnostic
-                ? { state: "failed", diagnostic: callbackDiagnostic }
-                : { state: "verified_synthetic" },
+              ngrokEndpoint: ngrokStartupFailure
+                ? {
+                    state: "failed",
+                    diagnostic: { code: "ngrok_start_failed" },
+                  }
+                : { state: "verified_exact_domain" },
+              publicWebhook: ngrokStartupFailure
+                ? { state: "failed", diagnostic: { code: "not_attempted" } }
+                : callbackDiagnostic
+                  ? { state: "failed", diagnostic: callbackDiagnostic }
+                  : { state: "verified_synthetic" },
               webhookAuthenticity: { state: "verified_in_automation" },
               botCreation: { state: "not_attempted" },
               retention: {
@@ -447,6 +455,9 @@ async function createFixture(
     },
     setCallbackDiagnostic(value: typeof callbackDiagnostic) {
       callbackDiagnostic = value;
+    },
+    setNgrokStartupFailure(value: boolean) {
+      ngrokStartupFailure = value;
     },
     setNativeFailure(value: typeof nativeFailure) {
       nativeFailure = value;

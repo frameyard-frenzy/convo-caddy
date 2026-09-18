@@ -726,6 +726,10 @@ for (const code of [
       if (details) details.open = true;
     });
     await expect(page.locator("#component-results")).toContainText(code);
+    await expect(page.locator("#callback-report")).toHaveValue(/Next action:/);
+    await expect(page.locator("#callback-report")).toHaveValue(
+      /Safety: do not disable protection globally/,
+    );
     if (code === "http_status")
       await expect(page.locator("#component-results")).toContainText(
         "HTTP 502",
@@ -790,6 +794,103 @@ test("diagnostic report rejects an unknown secret-like code", async ({
     /PRIVATE_TOKEN/,
   );
 });
+
+test("diagnostic report gives truthful standalone success, not-attempted and certificate actions", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Result: the signed synthetic public callback reached Caddy/,
+  );
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Next action: no callback recovery is needed/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /compare the route once on another trusted network/,
+  );
+
+  setup.setNgrokStartupFailure(true);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Result: the public callback was not attempted because ngrok endpoint setup failed/,
+  );
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Next action: check the ngrok authtoken, stable domain and domain ownership/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /this Mac sent a signed synthetic HTTPS callback/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /temporary tunnel closes after the test/,
+  );
+
+  setup.setNgrokStartupFailure(false);
+  setup.setCallbackDiagnostic({ code: "tls_certificate_failed" });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Next action: check this Mac’s clock and the trusted or managed-network certificate policy/,
+  );
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Do not bypass certificate verification/,
+  );
+});
+
+test("clipboard denial leaves the complete report selected for manual copy", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({ code: "connection_reset" });
+  await page.locator("#test-connections").click();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => false,
+    });
+  });
+  await page.getByRole("button", { name: "Copy diagnostic summary" }).click();
+  await expect(page.locator("#copy-callback-report-status")).toContainText(
+    "Select the summary and copy it manually",
+  );
+  await expect(page.locator("#callback-report")).toBeFocused();
+  expect(
+    await page.locator("#callback-report").evaluate((element) => {
+      const field = element as HTMLTextAreaElement;
+      return field.selectionEnd - field.selectionStart === field.value.length;
+    }),
+  ).toBe(true);
+});
+
+for (const width of [1100, 390]) {
+  test(`diagnostic copy controls have border-attached focus at ${width}`, async ({
+    page,
+    setup,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 850 });
+    await enterDraft(page);
+    setup.setCallbackDiagnostic({ code: "connection_reset" });
+    await page.locator("#test-connections").click();
+    for (const id of ["callback-report", "copy-callback-report"]) {
+      const control = page.locator(`#${id}`);
+      await control.focus();
+      expect(
+        await control.evaluate((el) => getComputedStyle(el).outlineOffset),
+      ).toBe("0px");
+      expect(
+        await control.evaluate((el) => getComputedStyle(el).outlineWidth),
+      ).toBe("3px");
+      await control.screenshot({
+        path: testInfo.outputPath(`attached-focus-${id}-${width}.png`),
+      });
+    }
+  });
+}
 
 for (const width of [1100, 390]) {
   test(`local acquisition remains accessible with retained drafts at ${width}`, async ({
