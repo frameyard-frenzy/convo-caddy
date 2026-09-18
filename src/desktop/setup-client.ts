@@ -9,6 +9,7 @@ const outcomes = {recall: byId("recall-outcome"), hermes: byId("hermes-outcome")
 const lists = {recall: byId("component-results"), hermes: byId("hermes-results"), assistant: byId("assistant-results")};
 const inputs = [...document.querySelectorAll("input,select")];
 const buttons = [...document.querySelectorAll("button")];
+const callbackReportPanel = byId("callback-report-panel"), callbackReport = byId("callback-report"), callbackReportStatus = byId("copy-callback-report-status");
 let initial = null, initialDraft = "", mutationLocked = true, active = null, operation = 0;
 const revisions = {recall: 0, hermes: 0, assistant: 0};
 
@@ -31,6 +32,9 @@ function setOutcome(group, kind, text) {
 function details(group, items) {
   lists[group].replaceChildren();
   for (const text of items) { const item = document.createElement("li"); item.textContent = text; lists[group].append(item); }
+}
+function clearCallbackReport() {
+  callbackReportPanel.hidden = true; callbackReport.value = ""; callbackReportStatus.textContent = "";
 }
 function syncControls() {
   for (const input of inputs) input.disabled = mutationLocked;
@@ -59,9 +63,11 @@ function setModels(values, selected = "") {
   syncControls();
 }
 function resetEvidence() {
+  clearCallbackReport();
   for (const group of Object.keys(outcomes)) { revisions[group]++; setOutcome(group, "", "Not tested"); details(group, []); }
 }
 function invalidate(group) {
+  if (group === "recall") clearCallbackReport();
   revisions[group]++;  details(group, []);
   setOutcome(group, "stale", group === "recall" ? "Changed — test again" : group === "assistant" ? "Model changed — test assistant again" : "Changed — load models again");
   if (group === "hermes") { setModels([]); revisions.assistant++; details("assistant", []); setOutcome("assistant", "", "Not tested"); }
@@ -95,7 +101,7 @@ model.addEventListener("change", () => { invalidate("assistant"); syncControls()
 async function run(group, progress, action, render) {
   if (mutationLocked || active !== null) return;
   const id = ++operation, revision = revisions[group]; active = id; syncControls();
-  setOutcome(group, "progress", progress); details(group, []);
+  setOutcome(group, "progress", progress); details(group, []); if (group === "recall") clearCallbackReport();
   try {
     const value = await action();
     if (active !== id || revision !== revisions[group]) return;
@@ -113,6 +119,12 @@ function callbackDetail(check) {
   const advice = {
     http_status: "HTTP " + diagnostic.httpStatus + " (expected 204). Check the ngrok domain routes to Caddy and has no redirect or access-policy page, then retry.",
     timeout: "Timed out waiting for the callback. Check this Mac’s network and ngrok availability, then retry.",
+    dns_failed: "DNS lookup failed. Check this Mac’s network and DNS availability, then compare once on another trusted network.",
+    tls_certificate_failed: "TLS certificate verification failed. Check the computer clock and trusted network or managed-network policy; do not bypass certificate verification.",
+    tls_protocol_failed: "The TLS response was not valid for HTTPS. Network or ISP security filtering is one possibility, not a confirmed cause; check its security history or ask the network administrator, then compare once on another trusted network.",
+    connection_refused: "The public route refused the connection. Check ngrok status and domain ownership, then retry.",
+    connection_reset: "The public route reset the connection. Network security filtering is one possibility, not a confirmed cause; check security history or ask the network administrator, then compare once on another trusted network.",
+    network_unreachable: "The network route was unreachable. Check connectivity and compare once on another trusted network.",
     connect_failed: "Could not connect. Check DNS, network and ngrok availability, then retry.",
     not_attempted: "Not attempted because an earlier endpoint step failed. Resolve that step first.",
     ngrok_start_failed: "ngrok could not start. Check its authtoken, stable domain and whether another tunnel owns that domain, then retry.",
@@ -121,12 +133,44 @@ function callbackDetail(check) {
   };
   return Object.hasOwn(advice, diagnostic.code) ? advice[diagnostic.code] + " [" + diagnostic.code + "]" : "Failed. Review this step’s prerequisites. If seeking help, share only the step name, never credentials.";
 }
+function diagnosticToken(check) {
+  if (!check.diagnostic) {
+    const allowedStates = new Set(["verified_synthetic","verified_exact_domain","failed"]);
+    return allowedStates.has(check.state) ? check.state : "failed [connect_failed]";
+  }
+  const allowed = new Set(["timeout","dns_failed","tls_certificate_failed","tls_protocol_failed","connection_refused","connection_reset","network_unreachable","connect_failed","not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]);
+  if (check.diagnostic.code === "http_status" && Number.isInteger(check.diagnostic.httpStatus) && check.diagnostic.httpStatus >= 100 && check.diagnostic.httpStatus <= 599) return "failed [http_status; HTTP " + check.diagnostic.httpStatus + "]";
+  return "failed [" + (allowed.has(check.diagnostic.code) ? check.diagnostic.code : "connect_failed") + "]";
+}
+function showCallbackReport(value) {
+  const recallStates = new Set(["authenticated_read_only","authentication_rejected","unavailable"]);
+  callbackReport.value = [
+    "Convo Caddy callback diagnostic",
+    "Recall credentials: " + (recallStates.has(value.recallCredentials.state) ? value.recallCredentials.state : "unavailable"),
+    "Local callback: " + diagnosticToken(value.localWebhook),
+    "ngrok endpoint: " + diagnosticToken(value.ngrokEndpoint),
+    "Public callback: " + diagnosticToken(value.publicWebhook),
+    "Boundary: this Mac sent a signed synthetic HTTPS callback through the temporary public tunnel to its local listener.",
+    "Limits: no bot was created; this does not prove Recall delivery, dashboard event selections, or provider retention. The tunnel closes after the test, so a later offline HTTP result is not this test failing.",
+    "Next: follow the failed component’s guidance. If the first three components passed, keep the entered keys and compare the route once on another trusted network; check network-security history or ask a managed-network administrator. Do not bypass certificate checks, disable protection globally, dump credentials, or retry until green."
+  ].join("\\n");
+  callbackReportPanel.hidden = false;
+}
 byId("test-connections").addEventListener("click", () => run("recall", "Checking…", () => request("/api/setup/connections/test", {method:"POST", body:JSON.stringify(recallPayload())}), value => {
   const states = [value.recallCredentials.state,value.localWebhook.state,value.ngrokEndpoint.state,value.publicWebhook.state];
   const passed = states.every(state => ["authenticated_read_only","verified_synthetic","verified_exact_domain"].includes(state));
-  setOutcome("recall", passed ? "success" : "failure", passed ? "Connection checks passed" : "Connection checks failed — open Diagnostic details below for the failed step and next action.");
+  const publicRouteOnly = value.recallCredentials.state === "authenticated_read_only" && value.localWebhook.state === "verified_synthetic" && value.ngrokEndpoint.state === "verified_exact_domain" && value.publicWebhook.state === "failed";
+  setOutcome("recall", passed ? "success" : "failure", passed ? "Connection checks passed" : publicRouteOnly ? "The public callback network route failed — keep the entered keys and review the route guidance below." : "Connection checks failed — open Diagnostic details below for the failed step and next action.");
   details("recall", ["Recall credentials: " + value.recallCredentials.state.replaceAll("_"," "), "Local callback: " + callbackDetail(value.localWebhook), "ngrok endpoint: " + callbackDetail(value.ngrokEndpoint), "Public callback: " + callbackDetail(value.publicWebhook), "No bot was created; dashboard subscriptions and provider retention were not verified."]);
+  showCallbackReport(value);
 }));
+byId("copy-callback-report").addEventListener("click", async () => {
+  if (callbackReportPanel.hidden || !callbackReport.value) return;
+  let copied = false;
+  try { await navigator.clipboard.writeText(callbackReport.value); copied = true; }
+  catch { callbackReport.focus(); callbackReport.select(); try { copied = document.execCommand("copy"); } catch {} }
+  callbackReportStatus.textContent = copied ? "Copied" : "Select the summary and copy it manually.";
+});
 byId("discover-hermes-profiles").addEventListener("click", () => {
   if (mutationLocked || active !== null) return;
   setModels([]); revisions.assistant++; setOutcome("assistant", "", "Not tested"); details("assistant", []);

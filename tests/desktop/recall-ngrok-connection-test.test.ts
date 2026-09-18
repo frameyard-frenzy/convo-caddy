@@ -148,10 +148,19 @@ describe("Recall and ngrok component test", () => {
       expect(JSON.stringify(result)).not.toContain("private-response-body");
     },
   );
-  it.each(["TimeoutError", "TypeError"])(
-    "distinguishes public %s from startup failure",
-    async (name) => {
-      const harness = createHarness({ publicError: name });
+  it.each([
+    ["TimeoutError", undefined, "timeout"],
+    ["TypeError", "ENOTFOUND", "dns_failed"],
+    ["TypeError", "UNABLE_TO_VERIFY_LEAF_SIGNATURE", "tls_certificate_failed"],
+    ["TypeError", "ERR_SSL_WRONG_VERSION_NUMBER", "tls_protocol_failed"],
+    ["TypeError", "ECONNREFUSED", "connection_refused"],
+    ["TypeError", "ECONNRESET", "connection_reset"],
+    ["TypeError", "ENETUNREACH", "network_unreachable"],
+    ["TypeError", "PRIVATE_TOKEN_123", "connect_failed"],
+  ] as const)(
+    "classifies public %s/%s as %s without exposing the native code",
+    async (name, causeCode, expected) => {
+      const harness = createHarness({ publicError: { name, causeCode } });
       const result = await new RecallNgrokConnectionTester({
         fetchImpl: harness.fetchImpl,
         ngrokAdapter: harness.ngrokAdapter,
@@ -159,12 +168,34 @@ describe("Recall and ngrok component test", () => {
       expect(result.publicWebhook).toEqual({
         state: "failed",
         diagnostic: {
-          code: name === "TimeoutError" ? "timeout" : "connect_failed",
+          code: expected,
         },
       });
       expect(result.ngrokEndpoint.state).toBe("verified_exact_domain");
+      expect(JSON.stringify(result)).not.toContain("PRIVATE_TOKEN_123");
     },
   );
+
+  it("bounds cyclic AggregateError traversal and finds an allowlisted nested cause", async () => {
+    const cyclic: { code: string; cause?: unknown } = {
+      code: "PRIVATE_SECRET",
+    };
+    cyclic.cause = cyclic;
+    const nested = new AggregateError([
+      cyclic,
+      { cause: { code: "ECONNRESET" } },
+    ]);
+    const harness = createHarness({ publicThrown: nested });
+    const result = await new RecallNgrokConnectionTester({
+      fetchImpl: harness.fetchImpl,
+      ngrokAdapter: harness.ngrokAdapter,
+    }).test(input);
+    expect(result.publicWebhook).toEqual({
+      state: "failed",
+      diagnostic: { code: "connection_reset" },
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_SECRET");
+  });
   it("marks public POST not attempted when endpoint startup fails", async () => {
     const harness = createHarness({ ngrokFailure: true });
     const result = await new RecallNgrokConnectionTester({
@@ -299,7 +330,8 @@ function createHarness(
     recallResponse?: Promise<Response>;
     ngrokFailure?: boolean;
     publicStatus?: number;
-    publicError?: string;
+    publicError?: { name: string; causeCode?: string };
+    publicThrown?: unknown;
     closeNeverSettles?: boolean;
     returnedDomain?: string;
     urlThrows?: boolean;
@@ -343,9 +375,13 @@ function createHarness(
     }
     if (url.startsWith(`https://${input.ngrokDomain}/`)) {
       publicRequests.push(url);
+      if (options.publicThrown) throw options.publicThrown;
       if (options.publicError)
         throw Object.assign(new Error("private-response-body"), {
-          name: options.publicError,
+          name: options.publicError.name,
+          cause: options.publicError.causeCode
+            ? { code: options.publicError.causeCode }
+            : undefined,
         });
       if (options.publicStatus)
         return new Response("private-response-body", {

@@ -70,6 +70,18 @@ describe("installer-first first-time onboarding", () => {
     );
     expect(people).toContain("Diagnostic details");
   });
+
+  it("documents callback route recovery without unsafe bypasses or false Recall proof", () => {
+    const people = readFileSync("README.md", "utf8");
+    expect(people).toContain("Public callback recovery");
+    expect(people).toContain("does not prove that Recall can deliver");
+    expect(people).toContain("Do not bypass certificate verification");
+    expect(people).toContain("another trusted network");
+    expect(people).toContain("actual running copy");
+    expect(people).toContain(
+      "Node, curl and Caddy’s Electron runtime can report different symptoms",
+    );
+  });
   it("ends the human guide with the shipped graphical uninstall choices", () => {
     const uninstall = people.split("### Uninstall")[1] ?? "";
     const flow = readFileSync(

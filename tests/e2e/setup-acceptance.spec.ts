@@ -698,6 +698,12 @@ test("storage code is visible through the real Save route with drafts retained",
 for (const code of [
   "http_status",
   "timeout",
+  "dns_failed",
+  "tls_certificate_failed",
+  "tls_protocol_failed",
+  "connection_refused",
+  "connection_reset",
+  "network_unreachable",
   "connect_failed",
   "not_attempted",
   "ngrok_start_failed",
@@ -714,9 +720,7 @@ for (const code of [
       ...(code === "http_status" ? { httpStatus: 502 } : {}),
     });
     await page.locator("#test-connections").click();
-    await expect(page.locator("#recall-outcome")).toContainText(
-      "Connection checks failed",
-    );
+    await expect(page.locator("#recall-outcome")).toContainText("failed");
     await page.locator("#component-results").evaluate((el) => {
       const details = el.closest("details");
       if (details) details.open = true;
@@ -731,6 +735,61 @@ for (const code of [
     expect(setup.commits).toBe(0);
   });
 }
+
+test("failed public route produces a copyable private-safe report and edits stale it", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({ code: "tls_protocol_failed" });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "public callback network route failed",
+  );
+  const report = page.locator("#callback-report");
+  await expect(report).toBeVisible();
+  await expect(report).toHaveValue(
+    /Recall credentials: authenticated_read_only/,
+  );
+  await expect(report).toHaveValue(
+    /Public callback: failed \[tls_protocol_failed\]/,
+  );
+  await expect(report).toHaveValue(/does not prove Recall delivery/);
+  await expect(report).not.toHaveValue(
+    /fixture\.ngrok|synthetic-.*canary|https:\/\//,
+  );
+  const copy = page.getByRole("button", { name: "Copy diagnostic summary" });
+  await copy.focus();
+  expect(await copy.evaluate((el) => getComputedStyle(el).outlineOffset)).toBe(
+    "0px",
+  );
+  await copy.click();
+  await expect(page.locator("#copy-callback-report-status")).toContainText(
+    "Copied",
+  );
+  await page.locator("#ngrok-domain").fill("changed.example.test");
+  await expect(report).toBeHidden();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "Changed — test again",
+  );
+});
+
+test("diagnostic report rejects an unknown secret-like code", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({
+    code: "PRIVATE_TOKEN_synthetic-canary",
+  } as never);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /\[connect_failed\]/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /PRIVATE_TOKEN/,
+  );
+});
 
 for (const width of [1100, 390]) {
   test(`local acquisition remains accessible with retained drafts at ${width}`, async ({
