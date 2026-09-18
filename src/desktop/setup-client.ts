@@ -126,7 +126,7 @@ function callbackDetail(check) {
     connection_reset: "The public route reset the connection. Network security filtering is one possibility, not a confirmed cause; check security history or ask the network administrator, then compare once on another trusted network.",
     network_unreachable: "The network route was unreachable. Check connectivity and compare once on another trusted network.",
     connect_failed: "Could not connect. Check DNS, network and ngrok availability, then retry.",
-    not_attempted: "Not attempted because an earlier endpoint step failed. Resolve that step first.",
+    not_attempted: "Not attempted because an earlier prerequisite failed. Resolve that step first.",
     ngrok_start_failed: "ngrok could not start. Check its authtoken, stable domain and whether another tunnel owns that domain, then retry.",
     ngrok_domain_mismatch: "ngrok returned a different endpoint. Check the assigned stable domain before retrying.",
     local_listener_failed: "Caddy could not open its temporary local callback listener. Retry; if it repeats, use this code to troubleshoot local listener access.",
@@ -150,7 +150,7 @@ function safeDiagnosticCode(diagnostic) {
 function callbackReportResult(value) {
   if (value.publicWebhook.state === "verified_synthetic") return "Result: the signed synthetic public callback reached Caddy through the temporary public tunnel.";
   const publicCode = safeDiagnosticCode(value.publicWebhook.diagnostic);
-  if (publicCode === "not_attempted") return "Result: the public callback was not attempted because ngrok endpoint setup failed.";
+  if (publicCode === "not_attempted") return "Result: the public callback was not attempted because an earlier prerequisite failed.";
   return "Result: Caddy attempted the signed synthetic public callback through the temporary public tunnel, but the route was not verified.";
 }
 function callbackReportNextAction(value) {

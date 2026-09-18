@@ -814,7 +814,7 @@ test("diagnostic report gives truthful standalone success, not-attempted and cer
   setup.setNgrokStartupFailure(true);
   await page.locator("#test-connections").click();
   await expect(page.locator("#callback-report")).toHaveValue(
-    /Result: the public callback was not attempted because ngrok endpoint setup failed/,
+    /Result: the public callback was not attempted because an earlier prerequisite failed/,
   );
   await expect(page.locator("#callback-report")).toHaveValue(
     /Next action: check the ngrok authtoken, stable domain and domain ownership/,
@@ -827,6 +827,19 @@ test("diagnostic report gives truthful standalone success, not-attempted and cer
   );
 
   setup.setNgrokStartupFailure(false);
+  setup.setLocalListenerFailure(true);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Result: the public callback was not attempted because an earlier prerequisite failed/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /because ngrok endpoint setup failed/,
+  );
+  await expect(page.locator("#component-results")).toContainText(
+    "Not attempted because an earlier prerequisite failed",
+  );
+
+  setup.setLocalListenerFailure(false);
   setup.setCallbackDiagnostic({ code: "tls_certificate_failed" });
   await page.locator("#test-connections").click();
   await expect(page.locator("#callback-report")).toHaveValue(
@@ -878,6 +891,7 @@ for (const width of [1100, 390]) {
     await page.locator("#test-connections").click();
     for (const id of ["callback-report", "copy-callback-report"]) {
       const control = page.locator(`#${id}`);
+      await control.scrollIntoViewIfNeeded();
       await control.focus();
       expect(
         await control.evaluate((el) => getComputedStyle(el).outlineOffset),
@@ -885,8 +899,28 @@ for (const width of [1100, 390]) {
       expect(
         await control.evaluate((el) => getComputedStyle(el).outlineWidth),
       ).toBe("3px");
-      await control.screenshot({
+      const box = await control.boundingBox();
+      const viewport = page.viewportSize();
+      expect(box).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      const margin = 8;
+      const x = Math.max(0, (box?.x ?? 0) - margin);
+      const y = Math.max(0, (box?.y ?? 0) - margin);
+      const right = Math.min(
+        viewport?.width ?? 0,
+        (box?.x ?? 0) + (box?.width ?? 0) + margin,
+      );
+      const bottom = Math.min(
+        viewport?.height ?? 0,
+        (box?.y ?? 0) + (box?.height ?? 0) + margin,
+      );
+      expect(x).toBeLessThan(box?.x ?? 0);
+      expect(y).toBeLessThan(box?.y ?? 0);
+      expect(right).toBeGreaterThan((box?.x ?? 0) + (box?.width ?? 0));
+      expect(bottom).toBeGreaterThan((box?.y ?? 0) + (box?.height ?? 0));
+      await page.screenshot({
         path: testInfo.outputPath(`attached-focus-${id}-${width}.png`),
+        clip: { x, y, width: right - x, height: bottom - y },
       });
     }
   });
