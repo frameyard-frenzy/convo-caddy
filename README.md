@@ -14,14 +14,14 @@ Keep your interview questions and follow-ups beside a Teams call, so you can lis
 
 ### Install
 
-**Availability:** No installer is currently published on the [project Releases page](https://github.com/frameyard-frenzy/convo-caddy/releases). Download is pending a release; private test DMGs are not public downloads.
+**Download:** [Convo Caddy 0.1.0 — unnotarized alpha](https://github.com/frameyard-frenzy/convo-caddy/releases/tag/v0.1.0) is available for Apple Silicon Macs running macOS 14 or later. Download `Convo-Caddy-0.1.0-arm64.dmg`; checksums and a source manifest are attached to the release. This alpha is ad-hoc signed, **not Developer ID signed or notarized by Apple**, and macOS may block first launch.
 
-Once the installer is published, on the Mac where you will conduct interviews:
+On the Mac where you will conduct interviews:
 
 1. Download the Convo Caddy `.dmg` from that Releases page.
 2. In Finder → Downloads, double-click the disk image.
 3. In its window, drag **Convo Caddy** into **Applications**. Wait for copying to finish, then eject the disk image in Finder's sidebar.
-4. Open Finder → **Applications** and double-click **Convo Caddy**. If macOS refuses to open it, keep the message for troubleshooting; do not bypass its protections.
+4. Open Finder → **Applications** and double-click **Convo Caddy**. If macOS cannot verify the developer or check the app for malicious software, follow the release page’s per-app **Privacy & Security → Open Anyway** instructions only if you trust this release. Stop on a “will damage your computer” or damaged/altered-download warning. Do not disable Gatekeeper globally. The DMG’s standalone uninstaller is also unnotarized.
 
 Connection settings opens on first launch. You can return to it through **Configuration → Connection Settings…**. Fill its three sections below in order. Keep keys in your password manager and masked app fields, never in chat or screenshots.
 
@@ -79,7 +79,7 @@ Use the graphical uninstaller to remove Caddy's app, private app data and saved 
 
 1. If capture is active, end the meeting in Teams or remove the visible bot there, and let Caddy finish saving. Uninstall does not stop a remote recording.
 2. Choose **Convo Caddy → Quit Convo Caddy**.
-3. In Finder → Downloads, double-click the retained installer DMG (or download it again once available). In its **Remove Convo Caddy** area, double-click **Uninstall Convo Caddy**.
+3. In Finder → Downloads, double-click the retained installer DMG (or download it again from the release page). In its **Remove Convo Caddy** area, double-click **Uninstall Convo Caddy**.
 4. If a workspace exists, read **“Also delete your workspace?”** and the displayed folder path. **No** is the default: it uninstalls Caddy and keeps your workspace. **Yes** also permanently deletes the entire displayed, verified dedicated workspace folder, never its parent. Both remove the app, private app data and saved Caddy credentials. With no workspace, the confirmation is titled **Uninstall Convo Caddy** with **Uninstall / Cancel**; choose **Uninstall** to remove the app, private app data and saved Caddy credentials. No workspace question is shown. **Cancel** closes this dialog without starting removal.
 5. Wait for **Convo Caddy uninstalled**. If kept, the result lists your workspace path. Click **OK**, then eject the disk image in Finder.
 
@@ -87,7 +87,7 @@ Cancel during progress can leave partial removal; items already removed cannot b
 
 ## For agents
 
-Use the same installer-first [Install](#install) and configuration sequence. No public installer is listed yet; report the missing release asset as a release gate, not as permission to build, publish or install another candidate. Source work is a separate [build-from-source path](docs/build-from-source.md), with [optional source installation and upgrade recovery](docs/source-install-and-upgrade.md).
+Use the same installer-first [Install](#install) and configuration sequence. Use the published unnotarized alpha and its explicit trust warning; leave macOS security confirmation to the human. A public download is not permission to install or override protections automatically. Source work is a separate [build-from-source path](docs/build-from-source.md), with [optional source installation and upgrade recovery](docs/source-install-and-upgrade.md).
 
 The human handles account access, SSH trust/enrollment, masked secret entry, macOS prompts and real provider/capture consent. Never request credentials in chat, inspect the clipboard or read secrets back from the app. Use the [Hermes owner contract](docs/hermes-owner-handoff.md) for complete metadata-only sequences **from the interview laptop**, for either local or remote Hermes. Only the human runs the bundled guide's secret transfer. Do not install, start, stop, restart, or replace Hermes or shared services to complete setup.
 
