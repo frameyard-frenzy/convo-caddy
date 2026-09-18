@@ -31,6 +31,12 @@ export type CallbackDiagnostic = {
   code:
     | "http_status"
     | "timeout"
+    | "dns_failed"
+    | "tls_certificate_failed"
+    | "tls_protocol_failed"
+    | "connection_refused"
+    | "connection_reset"
+    | "network_unreachable"
     | "connect_failed"
     | "not_attempted"
     | "ngrok_start_failed"
@@ -307,14 +313,84 @@ export class RecallNgrokConnectionTester {
             diagnostic: { code: "http_status", httpStatus: response.status },
           };
     } catch (error) {
-      const timeout =
-        error instanceof Error &&
-        ["TimeoutError", "AbortError"].includes(error.name);
       return {
         state: "failed",
-        diagnostic: { code: timeout ? "timeout" : "connect_failed" },
+        diagnostic: { code: classifyTransportError(error) },
       };
     }
+  }
+}
+
+const TRANSPORT_CODES: Readonly<Record<string, CallbackDiagnostic["code"]>> = {
+  ENOTFOUND: "dns_failed",
+  EAI_AGAIN: "dns_failed",
+  CERT_HAS_EXPIRED: "tls_certificate_failed",
+  DEPTH_ZERO_SELF_SIGNED_CERT: "tls_certificate_failed",
+  ERR_TLS_CERT_ALTNAME_INVALID: "tls_certificate_failed",
+  SELF_SIGNED_CERT_IN_CHAIN: "tls_certificate_failed",
+  UNABLE_TO_GET_ISSUER_CERT_LOCALLY: "tls_certificate_failed",
+  UNABLE_TO_VERIFY_LEAF_SIGNATURE: "tls_certificate_failed",
+  ERR_SSL_PACKET_LENGTH_TOO_LONG: "tls_protocol_failed",
+  ERR_SSL_WRONG_VERSION_NUMBER: "tls_protocol_failed",
+  ERR_TLS_PROTOCOL_VERSION_CONFLICT: "tls_protocol_failed",
+  EPROTO: "tls_protocol_failed",
+  ETIMEDOUT: "timeout",
+  UND_ERR_CONNECT_TIMEOUT: "timeout",
+  UND_ERR_HEADERS_TIMEOUT: "timeout",
+  ECONNREFUSED: "connection_refused",
+  ECONNRESET: "connection_reset",
+  ENETUNREACH: "network_unreachable",
+  EHOSTUNREACH: "network_unreachable",
+};
+
+function classifyTransportError(error: unknown): CallbackDiagnostic["code"] {
+  const queue: Array<{ value: unknown; depth: number }> = [
+    { value: error, depth: 0 },
+  ];
+  const seen = new Set<object>();
+  for (let visited = 0; queue.length > 0 && visited < 24; visited++) {
+    const item = queue.shift();
+    if (!item) break;
+    const { value, depth } = item;
+    if (
+      (typeof value !== "object" && typeof value !== "function") ||
+      value === null
+    )
+      continue;
+    if (seen.has(value)) continue;
+    seen.add(value);
+    const name = safeProperty(value, "name");
+    if (name === "TimeoutError" || name === "AbortError") return "timeout";
+    const code = safeProperty(value, "code");
+    if (typeof code === "string" && Object.hasOwn(TRANSPORT_CODES, code))
+      return TRANSPORT_CODES[code] ?? "connect_failed";
+    if (depth >= 5) continue;
+    const cause = safeProperty(value, "cause");
+    if (cause !== undefined) queue.push({ value: cause, depth: depth + 1 });
+    for (const nested of safeArrayValues(safeProperty(value, "errors"), 8))
+      queue.push({ value: nested, depth: depth + 1 });
+  }
+  return "connect_failed";
+}
+
+function safeArrayValues(value: unknown, limit: number): unknown[] {
+  const values: unknown[] = [];
+  try {
+    if (!Array.isArray(value)) return values;
+    const length = Math.min(value.length, limit);
+    for (let index = 0; index < length; index++)
+      values.push(safeProperty(value, String(index)));
+  } catch {
+    return values;
+  }
+  return values;
+}
+
+function safeProperty(value: object, key: string): unknown {
+  try {
+    return Reflect.get(value, key);
+  } catch {
+    return undefined;
   }
 }
 

@@ -55,7 +55,22 @@ bot.fatal
 
 Do **not** add `transcript.data`; Caddy attaches it when creating a bot. Caddy runs the tunnel itself, so do not start another ngrok process on that domain.
 
-Click **Test Recall & ngrok** in Caddy. It should report **Connection checks passed**; this checks a synthetic public callback and creates no meeting bot. If it fails, open **Diagnostic details** and follow its action. For callback failures, recheck the hostname, authtoken and whether another tunnel uses the domain; do not stop an unfamiliar process. Use the displayed code to troubleshoot yourself or with an agent. If seeking help, share only the code and button name, never field values. The check does not verify your dashboard event selections or real meeting capture.
+Click **Test Recall & ngrok** in Caddy. It should report **Connection checks passed**; this checks a synthetic public callback and creates no meeting bot. If it fails, open **Diagnostic details** and follow its action. Recheck credentials only when their own component failed. If Recall authentication passed, keep those entered keys; if exact ngrok endpoint startup passed, keep its authtoken and domain while investigating the public route. Do not stop an unfamiliar process. Use **Copy diagnostic summary** to troubleshoot yourself or with an agent without sharing field values. The check does not verify your dashboard event selections or real meeting capture.
+
+#### Public callback recovery
+
+Read the four component results in order. If Recall credentials, the local callback and the exact ngrok endpoint passed but the public callback failed, keep the entered keys: the remaining failure is on this Mac’s public network route. Use **Copy diagnostic summary** to share the secret-free outcomes and limits with a helper. It contains no hostname, URL, credential, saved setting or raw error.
+
+- For DNS or unreachable-network results, confirm ordinary connectivity and compare the check once on another trusted network.
+- For a certificate-verification result, check the Mac’s clock and the network’s trust or managed-security policy. Do not bypass certificate verification.
+- For a TLS protocol, invalid-response or reset result, network or ISP security filtering is one possibility, not proof. Check the network-security product’s history for the time of the test. On a managed network, give the summary to the network administrator rather than trying to bypass policy. A single comparison on another trusted network can isolate the route without changing accounts or credentials.
+- For refused connections or an HTTP status, check whether the actual running copy of Caddy owns the configured ngrok domain and whether a redirect or access-policy page stands in front of it. Do not stop an unfamiliar process.
+
+The check sends a signed synthetic request from this Mac through a temporary public tunnel back to Caddy. It does not prove that Recall can deliver a real webhook, that dashboard event subscriptions are correct, or that provider retention matches expectations. Caddy closes the tunnel after the test, so a later browser or command-line HTTP “offline” response is different from a failure while the app check was running. A custom callback domain is not a proven fix and is not required by this guidance.
+
+Ordinary installer onboarding needs no developer tools. A technical helper may compare system DNS or HTTPS tools if already available, but Node, curl and Caddy’s Electron runtime can report different symptoms. Do not disable network protection globally, add broad exceptions, dump credentials or headers, repeatedly retry until green, or change DNS/accounts based only on a generic TLS failure.
+
+If Connection Settings shows older wording and no **Copy diagnostic summary** after a test, that identifies an older running Caddy copy. Preserve its draft; do not reset credentials or delete app data. Use that installed copy’s guidance until a separately approved matching update is available.
 
 ### Hermes
 

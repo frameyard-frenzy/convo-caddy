@@ -698,6 +698,12 @@ test("storage code is visible through the real Save route with drafts retained",
 for (const code of [
   "http_status",
   "timeout",
+  "dns_failed",
+  "tls_certificate_failed",
+  "tls_protocol_failed",
+  "connection_refused",
+  "connection_reset",
+  "network_unreachable",
   "connect_failed",
   "not_attempted",
   "ngrok_start_failed",
@@ -714,14 +720,16 @@ for (const code of [
       ...(code === "http_status" ? { httpStatus: 502 } : {}),
     });
     await page.locator("#test-connections").click();
-    await expect(page.locator("#recall-outcome")).toContainText(
-      "Connection checks failed",
-    );
+    await expect(page.locator("#recall-outcome")).toContainText("failed");
     await page.locator("#component-results").evaluate((el) => {
       const details = el.closest("details");
       if (details) details.open = true;
     });
     await expect(page.locator("#component-results")).toContainText(code);
+    await expect(page.locator("#callback-report")).toHaveValue(/Next action:/);
+    await expect(page.locator("#callback-report")).toHaveValue(
+      /Safety: do not disable protection globally/,
+    );
     if (code === "http_status")
       await expect(page.locator("#component-results")).toContainText(
         "HTTP 502",
@@ -729,6 +737,192 @@ for (const code of [
     for (const [role, value] of Object.entries(canaries))
       await expect(page.locator(`#${role}`)).toHaveValue(value);
     expect(setup.commits).toBe(0);
+  });
+}
+
+test("failed public route produces a copyable private-safe report and edits stale it", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({ code: "tls_protocol_failed" });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "public callback network route failed",
+  );
+  const report = page.locator("#callback-report");
+  await expect(report).toBeVisible();
+  await expect(report).toHaveValue(
+    /Recall credentials: authenticated_read_only/,
+  );
+  await expect(report).toHaveValue(
+    /Public callback: failed \[tls_protocol_failed\]/,
+  );
+  await expect(report).toHaveValue(/does not prove Recall delivery/);
+  await expect(report).not.toHaveValue(
+    /fixture\.ngrok|synthetic-.*canary|https:\/\//,
+  );
+  const copy = page.getByRole("button", { name: "Copy diagnostic summary" });
+  await copy.focus();
+  expect(await copy.evaluate((el) => getComputedStyle(el).outlineOffset)).toBe(
+    "0px",
+  );
+  await copy.click();
+  await expect(page.locator("#copy-callback-report-status")).toContainText(
+    "Copied",
+  );
+  await page.locator("#ngrok-domain").fill("changed.example.test");
+  await expect(report).toBeHidden();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "Changed — test again",
+  );
+});
+
+test("diagnostic report rejects an unknown secret-like code", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({
+    code: "PRIVATE_TOKEN_synthetic-canary",
+  } as never);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /\[connect_failed\]/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /PRIVATE_TOKEN/,
+  );
+});
+
+test("diagnostic report gives truthful standalone success, not-attempted and certificate actions", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Result: the signed synthetic public callback reached Caddy/,
+  );
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Next action: no callback recovery is needed/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /compare the route once on another trusted network/,
+  );
+
+  setup.setNgrokStartupFailure(true);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Result: the public callback was not attempted because an earlier prerequisite failed/,
+  );
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Next action: check the ngrok authtoken, stable domain and domain ownership/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /this Mac sent a signed synthetic HTTPS callback/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /temporary tunnel closes after the test/,
+  );
+
+  setup.setNgrokStartupFailure(false);
+  setup.setLocalListenerFailure(true);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Result: the public callback was not attempted because an earlier prerequisite failed/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /because ngrok endpoint setup failed/,
+  );
+  await expect(page.locator("#component-results")).toContainText(
+    "Not attempted because an earlier prerequisite failed",
+  );
+
+  setup.setLocalListenerFailure(false);
+  setup.setCallbackDiagnostic({ code: "tls_certificate_failed" });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Next action: check this Mac’s clock and the trusted or managed-network certificate policy/,
+  );
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Do not bypass certificate verification/,
+  );
+});
+
+test("clipboard denial leaves the complete report selected for manual copy", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({ code: "connection_reset" });
+  await page.locator("#test-connections").click();
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => Promise.reject(new Error("denied")) },
+    });
+    Object.defineProperty(document, "execCommand", {
+      configurable: true,
+      value: () => false,
+    });
+  });
+  await page.getByRole("button", { name: "Copy diagnostic summary" }).click();
+  await expect(page.locator("#copy-callback-report-status")).toContainText(
+    "Select the summary and copy it manually",
+  );
+  await expect(page.locator("#callback-report")).toBeFocused();
+  expect(
+    await page.locator("#callback-report").evaluate((element) => {
+      const field = element as HTMLTextAreaElement;
+      return field.selectionEnd - field.selectionStart === field.value.length;
+    }),
+  ).toBe(true);
+});
+
+for (const width of [1100, 390]) {
+  test(`diagnostic copy controls have border-attached focus at ${width}`, async ({
+    page,
+    setup,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 850 });
+    await enterDraft(page);
+    setup.setCallbackDiagnostic({ code: "connection_reset" });
+    await page.locator("#test-connections").click();
+    for (const id of ["callback-report", "copy-callback-report"]) {
+      const control = page.locator(`#${id}`);
+      await control.scrollIntoViewIfNeeded();
+      await control.focus();
+      expect(
+        await control.evaluate((el) => getComputedStyle(el).outlineOffset),
+      ).toBe("0px");
+      expect(
+        await control.evaluate((el) => getComputedStyle(el).outlineWidth),
+      ).toBe("3px");
+      const box = await control.boundingBox();
+      const viewport = page.viewportSize();
+      expect(box).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      const margin = 8;
+      const x = Math.max(0, (box?.x ?? 0) - margin);
+      const y = Math.max(0, (box?.y ?? 0) - margin);
+      const right = Math.min(
+        viewport?.width ?? 0,
+        (box?.x ?? 0) + (box?.width ?? 0) + margin,
+      );
+      const bottom = Math.min(
+        viewport?.height ?? 0,
+        (box?.y ?? 0) + (box?.height ?? 0) + margin,
+      );
+      expect(x).toBeLessThan(box?.x ?? 0);
+      expect(y).toBeLessThan(box?.y ?? 0);
+      expect(right).toBeGreaterThan((box?.x ?? 0) + (box?.width ?? 0));
+      expect(bottom).toBeGreaterThan((box?.y ?? 0) + (box?.height ?? 0));
+      await page.screenshot({
+        path: testInfo.outputPath(`attached-focus-${id}-${width}.png`),
+        clip: { x, y, width: right - x, height: bottom - y },
+      });
+    }
   });
 }
 
