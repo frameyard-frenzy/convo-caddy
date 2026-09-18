@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "state": {
+    "sessionId": "11111111-2222-4333-8444-555555555555",
+    "startedAt": "2026-09-10T12:00:00.000Z",
+    "elapsedMs": 0,
+    "topics": [
+      {
+        "id": "prep-1",
+        "tier": "must",
+        "text": "Tell me about the last time this happened.",
+        "checked": false
+      },
+      {
+        "id": "prep-2",
+        "tier": "more",
+        "text": "What made that difficult?",
+        "checked": false
+      }
+    ],
+    "revisit": [],
+    "questions": [],
+    "notes": [],
+    "transcript": [],
+    "chat": [],
+    "capture": {
+      "mode": "recall",
+      "operationId": "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+      "status": "failed",
+      "authorization": {
+        "method": "operator_admission",
+        "state": "pending",
+        "admittedAt": null
+      },
+      "notice": {
+        "text": "Convo Caddy is recording and transcribing this conversation.",
+        "displayDurationMs": 10000,
+        "delivery": "video_with_chat_fallback",
+        "state": "pending",
+        "displayedAt": null,
+        "clearedAt": null,
+        "error": null
+      },
+      "provider": {
+        "name": "recall_ai",
+        "region": "us-west-2",
+        "botId": "synthetic-uninstall-bot",
+        "recordingId": null
+      },
+      "meetingPlatform": "microsoft_teams_personal",
+      "lastEventAt": "2026-09-10T12:00:00.000Z",
+      "error": "Synthetic failure; remote state unknown.",
+      "recording": {
+        "location": "recall_ai",
+        "retention": {
+          "requestedMedia": "none",
+          "providerConfirmed": false,
+          "accountMetadata": "unknown"
+        }
+      }
+    },
+    "lifecycle": {
+      "displayName": null,
+      "providerMilestones": {
+        "callEndedAt": null,
+        "transcriptDoneAt": null,
+        "recordingDoneAt": null,
+        "botDoneAt": null,
+        "providerErrorAt": null
+      },
+      "finalization": {
+        "state": "pending"
+      }
+    },
+    "simulation": {
+      "status": "idle",
+      "cursor": 0,
+      "speed": 20
+    }
+  },
+  "mutations": [],
+  "workspace": null
+}

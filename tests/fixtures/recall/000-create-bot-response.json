@@ -1,0 +1,78 @@
+{
+  "id": "00000000-0000-4000-8000-000000000001",
+  "meeting_url": {
+    "meeting_id": "00000000-0000-4000-8000-000000000002",
+    "meeting_password": "redacted-string-1",
+    "platform": "microsoft_teams_live"
+  },
+  "bot_name": "Convo Caddy",
+  "join_at": "2026-01-01T00:00:00.000Z",
+  "recording_config": {
+    "transcript": {
+      "provider": {
+        "recallai_streaming": {
+          "language_code": "en",
+          "filter_profanity": false,
+          "mode": "prioritize_low_latency"
+        }
+      },
+      "diarization": {
+        "use_separate_streams_when_available": true
+      }
+    },
+    "realtime_endpoints": [
+      {
+        "type": "webhook",
+        "url": "https://example.invalid/redacted",
+        "events": ["redacted-string-2"]
+      }
+    ],
+    "retention": null,
+    "video_mixed_layout": "redacted-string-3",
+    "video_mixed_mp4": null,
+    "participant_events": {},
+    "meeting_metadata": {},
+    "video_mixed_participant_video_when_screenshare": "redacted-string-4",
+    "start_recording_on": "redacted-string-5"
+  },
+  "status_changes": [],
+  "recordings": [],
+  "chat": {
+    "on_bot_join": {
+      "send_to": "redacted-string-6",
+      "message": "synthetic fixture utterance 1",
+      "pin": false
+    }
+  },
+  "automatic_leave": {
+    "waiting_room_timeout": 1200,
+    "noone_joined_timeout": 1200,
+    "everyone_left_timeout": {
+      "timeout": 2,
+      "activate_after": null
+    },
+    "in_call_not_recording_timeout": 3600,
+    "recording_permission_denied_timeout": 30,
+    "silence_detection": {
+      "timeout": 3600,
+      "activate_after": 1200
+    },
+    "bot_detection": {
+      "using_participant_events": {
+        "timeout": 600,
+        "activate_after": 1200
+      },
+      "using_participant_names": {
+        "timeout": 600,
+        "activate_after": 120,
+        "matches": [
+          "redacted-string-7",
+          "redacted-string-8",
+          "redacted-string-9"
+        ]
+      }
+    }
+  },
+  "calendar_meetings": [],
+  "metadata": {}
+}

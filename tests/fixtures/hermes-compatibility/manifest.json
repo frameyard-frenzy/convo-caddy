@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "targets": [
+    {
+      "kind": "installed-lineage",
+      "commit": "c9edd184069d9cc68c25d7d03db574bca8fe515a",
+      "namedProfileEndpoint": false
+    },
+    {
+      "kind": "official-stable",
+      "version": "v2026.8.31",
+      "commit": "29112bef099274229cadff79cdff7bf7b99c4b77",
+      "namedProfileEndpoint": true
+    },
+    {
+      "kind": "official-main-snapshot",
+      "commit": "693641aa8b4359c602283bdbbc14041e03bc47bc",
+      "namedProfileEndpoint": true
+    }
+  ],
+  "syntheticMarkers": [
+    "Synthetic Caddy Identity Sentinel",
+    "Synthetic remembered preference sentinel",
+    "Synthetic user context sentinel"
+  ],
+  "limitations": "Prompt construction and protocol behavior use synthetic profiles and fake transport; no live provider, SSH, profile, or gateway is exercised. Named profile routing is protocol-tested for all consumers and construction-proven only where the pinned target advertises it."
+}

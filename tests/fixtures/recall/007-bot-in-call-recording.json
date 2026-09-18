@@ -1,0 +1,14 @@
+{
+  "data": {
+    "bot": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "metadata": {}
+    },
+    "data": {
+      "code": "in_call_recording",
+      "sub_code": null,
+      "updated_at": "2026-01-01T00:00:03.000Z"
+    }
+  },
+  "event": "bot.in_call_recording"
+}

@@ -1,0 +1,70 @@
+# Writing, opening and editing interview prep
+
+Write an ordinary UTF-8 `.md` file in a text editor. Start from the workspace’s `prep/TEMPLATE.md`, or use this synthetic example:
+
+```markdown
+# Decision interview
+
+Duration: 30 minutes
+
+## Person summary
+- Leads a fictional quality team.
+- Prefers to explain one concrete case.
+
+## Must
+- [ ] What changed your decision?
+  Which evidence mattered most?
+
+## More Avenues
+- [ ] Who helped reconstruct the sequence?
+- [ ] What would you try next time?
+```
+
+Use one `#` title of 1–200 characters before the sections. Duration is optional (30 minutes by default); when present, put one `Duration: 1–480 minutes` line before the sections. Heading names and Duration are case-insensitive. Person summary is optional, including in old prep files. Its bullets are human-supplied background, never generated biography or participant testimony. Each section may appear once. At least one question is required when importing a prep file.
+
+Questions accept ordinary `-`, `*`, `+`, numbered `1.` / `1)` or checklist `- [ ]` / `- [x]` bullets. Imported checkmarks retain the author’s explicit checked state and remain reversible in Caddy. Unicode, blank lines and wrapped text work. Lines indented by at least two spaces after a question continue that question, including nested list text. Keep new questions at the top level. YAML frontmatter, unrelated sections and fenced examples inside unrelated sections are preserved. Caddy reads its own named sections; malformed content inside those sections is rejected without rewriting the file. Parsing makes no model call.
+
+Keep the file at most 256 KiB, with 1–200 questions and up to 200 summary bullets, each at most 4,000 characters. Invalid UTF-8, null characters, links/directories in place of a regular file and malformed content produce an error without changing the selection. Correct the named file and choose it again.
+
+Choose **Choose prep…** in Caddy. Its tooltip is **Choose a markdown prep file.** The macOS Open panel starts at `<workspace>/prep`; navigate to `current`, `archive`, or elsewhere. Cancel preserves the selection. Caddy validates the exact chosen file and makes a uniquely named working copy under `prep/current`. Matching basenames never overwrite one another. The native picker also binds that exact selected original as the pre-conversation Save target. Browser selection binds the selected `prep/current` file. Caddy never writes inside an application bundle; choose a writable prep outside the app. Cancel does not change the binding.
+
+Title, duration, Person summary, Must/More Avenues and any existing Notes, Questions and Revisit lists populate the page. Click the actual text, or the empty area of a card, and type. Tab reaches each text surface and its separate checkbox. Enter splits a list item; Backspace at its start joins it to the preceding item. Paste plain lines or Markdown bullets/checklists: Caddy supplies summary/Notes bullets and question/thread checkboxes. Clear an item's text to remove it when edits next flush. Ordinary text undo remains available; immediately after a split, paste or merge, Command-Z (Control-Z on other platforms) restores that structural change before it is saved. Editing a mark's text preserves its ID, timestamp, transcript reference and checked state. If you clear an item and its deletion is already being saved, replacement text typed before the acknowledgement becomes a new item after that deletion succeeds, with a fresh identity/reference and an unchecked box. A queued check on the deleted item is cancelled only after that same deletion succeeds; a failed or competing removal does not silently discard it. Checks remain reversible. Direct edits make no assistant request.
+
+There is one optional **Save** button beside **Choose prep…**. **Command-S** invokes the same operation without opening the browser Save Page dialog or making a model call. No Add/Edit/Remove/Cancel editor controls or separate editing forms are present. Save drains the latest text, composition and checks, including typing during a pending acknowledgement. Automatic saving remains in place; Save is not a prerequisite. Submitting any Assistant question or command first saves every current draft, then sends the request using that exact saved context. Starting capture also flushes drafts. At provider completion, Caddy waits for composition and pending edit acknowledgements and requested checkbox writes, flushes the latest text, then exports automatically. While the final export request is in flight, text is read-only. A failed flush keeps drafts on the page, displays the error and blocks the downstream question/export; retry the question or **Finish saving** after resolving the error. New typing during an edit acknowledgement remains a draft and is included by the flush before proceeding. Incoming transcript/readiness updates preserve the editing node and caret. Delayed same-session events from an older content revision cannot undo already acknowledged saves. Equal-content-revision events still deliver transcript, checkbox and completion updates; content revision is not a counter for every session event.
+
+Drafts not yet flushed live in the open page; keep that page open while resolving a save failure. The durable working interview is the existing private `~/Library/Application Support/Convo Caddy/active-session.json`. Before conversation start, Save and automatic flush also atomically update the bound selected prep and its owned working copy. For a native selection, this means the original file actually chosen in the Open panel—even outside the workspace—not just its imported copy. Browser selection writes the selected working file. After conversation start, saves affect only the interview checkpoint; prep bytes are isolated from live-session edits. The checkpoint remains authoritative for Assistant context and final conversation files.
+
+The start boundary is lifecycle-based: `live_ready` is preparation; Recall bot creation blocks Save while pending; a known bot/capture is an active interview. A failed creation with no known bot, no admission and no transcript leaves preparation writable. This does not authorize automatic capture retries or assert that an ambiguous remote failure created no bot. In synthetic simulation, only idle/cursor-zero is pre-start. Elapsed wall time is not the boundary.
+
+The source must still be a regular writable UTF-8 file at the bound location with the exact bytes Caddy selected or last saved. Missing files, substituted links, permission errors or external changes preserve the draft and external bytes and block the downstream operation. Restore the expected file and retry Save, or deliberately choose the changed prep again. With no writable selection, choose a prep first; Save never claims to have written a template inside the app. Replacement uses a sibling temporary file, fsync and rename, preserving file permission bits and leaving parent permissions untouched. Identity and bytes are rechecked immediately before rename; this is optimistic conflict detection, not a lock on external editors.
+
+A bounded pending-write receipt reaches the checkpoint before prep replacement. If replacement succeeds but the final checkpoint fails, the error says so and retry accepts only that receipt’s exact before/after bytes, including after restart. Later edits are then saved too. An unresolved receipt blocks capture start and workspace relocation. Relocation rebases a selected original inside the workspace, including its durable checkpoint reference; external originals retain their own location.
+
+Markdown saves patch owned metadata/list blocks and preserve unrelated source ranges, frontmatter, fenced examples and untouched list formatting. Notes/summary remain bullets; question/thread lists keep checks. A bounded HTML comment stores only IDs/checks/reference metadata and the optional interview name, not transcript or Assistant history. Visible Markdown remains text authority on reselection. JSON preps retain JSON and use a bounded `preparation` extension without duplicating legacy titles. Empty prepared lists deliberately saved in Caddy can be reloaded. All output retains the 256 KiB byte cap. Content that cannot be represented without changing its Markdown meaning fails visibly and retains the draft.
+
+Page edits preserve selected prep identity. Until the first saved page edit, starting capture rereads the selected working copy; afterward the saved interview snapshot is authoritative. Pre-conversation edits now revise the original through Save/automatic flush; an independently changed original must be explicitly chosen again. Selection is locked after capture starts. While a local draft exists, choosing another prep is blocked to prevent accidental draft loss. Completed/finalizing interviews, transcript evidence, machine timestamps and Assistant history are read-only.
+
+Completion publishes `manifest.json`, `conversation.json`, `conversation.md`, and the last successfully saved pre-conversation prep bytes as `prep.md` (or legacy `prep.json`). The conversation files contain the edited interview snapshot, summary, current checks and marks; the prep file preserves source provenance. The archive retains those same source bytes. Only an unchanged owned working copy is consumed after durable publication and archive. Retry never overwrites a different record or archive. Old JSON prep, checkpoints and finished records remain readable without conversion.
+
+Use **Workspace → Move workspace…** to relocate the entire dedicated workspace; see [workspace move and recovery](workspace-move.md). Browser fixture screenshots prove web behavior only; native panel appearance and an actual external-drive move remain human acceptance checks.
+
+Older interview checkpoints obtain their title, duration and optional summary from the saved prep snapshot before display or editing. Opening an older interview does not reread a changed external file or replace its metadata with defaults. Legacy JSON titles over 200 characters and durations over 480 minutes remain intact through edits, checkpoints and finished output. You can keep either field unchanged while editing another field; a replacement title must use 1–200 characters and a replacement duration 1–480 minutes. The page sends only changed metadata fields, so a large unchanged legacy title does not enlarge an unrelated save request. Existing prep byte caps and Markdown authoring limits remain unchanged.
+
+Before the first direct page edit, starting capture refreshes the selected working prep. If editable content changed, an already-open draft becomes stale: a flush keeps the draft and refuses to overwrite the refreshed content. Copy your draft if needed, then press Escape in the affected text to accept the current saved value before revising it. An unchanged prep, including formatting-only changes, preserves checks and draft validity. If saving the capture operation fails, no bot is created and the previous content, revision and prep binding remain authoritative. A provider failure after that save retains the refreshed, persisted content and revision.
+
+The editable page registers a persisted finalization barrier before enabling its fields. Terminal provider events retain an editable pending interview until the page acknowledges the current saved content revision. This also prevents restart from exporting a checkpoint while the page still needs to resolve its final flush. Reopening the page can finish the saved checkpoint; it cannot recover keystrokes that never reached a successful flush. Headless sessions without an editable page retain their existing automatic finalization behavior.
+
+During preparation, choosing another prep replaces its notes, questions, revisit items, and display name as well as its title, summary, and prepared questions. Absent saved fields start empty; content from the previous prep is not inherited. Indented nested bullets are continuations of the preceding prepared question, so they do not consume a question identity or checkbox.
+
+When another row changes, unchanged list rows retain their complete original source, including ordinary unindented continuation lines. Source-row reuse and editable-list reconciliation use the same bounded row reader; checkbox changes do not truncate neighboring questions or notes.
+
+Quit, Command+Q, and window-close resolve unsaved edits before stopping the local runtime. Save uses the same preparation-original/working-copy or active-session persistence as the page Save button; Discard leaves already durable writes intact and drops only the remaining draft; Cancel keeps the window and runtime. Save errors/conflicts keep drafts available for retry. An in-progress operation may require finishing it before retrying Quit. Active-capture risk confirmation remains separate, and quitting does not remove a remote meeting bot. Connection Settings has the same Save/Discard/Cancel close choice. Clean and completed conversations close without a draft prompt.
+
+### Selected filename display
+
+The selected-prep label uses the exact basename of the original native selection,
+including any UUID that was already part of that filename. The unique filename
+under `prep/current/` remains the internal working-copy identity; display does
+not rename it or change writeback authority. Restart derives the label from the
+saved original target. Older bindings without that target show their exact
+stored working filename rather than guessing by stripping a suffix.

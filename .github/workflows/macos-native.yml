@@ -1,0 +1,24 @@
+name: macOS native safety
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  native:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11.19.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version-file: .nvmrc, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: Verify setup commands in required bash and zsh
+        run: pnpm exec vitest run tests/public/ssh-target-recipe.test.ts
+      - run: swift test --package-path native/uninstaller
+      - run: pnpm build:maintenance-lock
+      - run: python3 native/lifecycle-lock/test_lock.py
+      - run: pnpm build:icon
+      - run: pnpm build:uninstaller

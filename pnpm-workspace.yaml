@@ -1,0 +1,12 @@
+allowBuilds:
+  electron: true
+  esbuild: true
+  fs-xattr: true
+  macos-alias: true
+nodeLinker: hoisted
+injectWorkspacePackages: true
+overrides:
+  # Forge 7's rebuild package still names an immutable Electron node-gyp Git
+  # commit. Use Electron's registry-published equivalent so pnpm can retain its
+  # transitive exotic-dependency protection.
+  "@electron/rebuild@3.7.2>@electron/node-gyp": 10.2.0-electron.1

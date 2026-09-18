@@ -1,0 +1,110 @@
+{
+  "event": "transcript.data",
+  "data": {
+    "data": {
+      "words": [
+        {
+          "text": "synthetic fixture utterance 23",
+          "start_timestamp": {
+            "relative": 40.63999938964844,
+            "absolute": "2026-01-01T00:00:32.000Z"
+          },
+          "end_timestamp": {
+            "relative": 40.720001220703125,
+            "absolute": "2026-01-01T00:00:33.000Z"
+          }
+        },
+        {
+          "text": "synthetic fixture utterance 24",
+          "start_timestamp": {
+            "relative": 40.720001220703125,
+            "absolute": "2026-01-01T00:00:33.000Z"
+          },
+          "end_timestamp": {
+            "relative": 40.79999923706055,
+            "absolute": "2026-01-01T00:00:34.000Z"
+          }
+        },
+        {
+          "text": "synthetic fixture utterance 25",
+          "start_timestamp": {
+            "relative": 41.119998931884766,
+            "absolute": "2026-01-01T00:00:35.000Z"
+          },
+          "end_timestamp": {
+            "relative": 41.20000076293945,
+            "absolute": "2026-01-01T00:00:36.000Z"
+          }
+        },
+        {
+          "text": "synthetic fixture utterance 26",
+          "start_timestamp": {
+            "relative": 41.36000061035156,
+            "absolute": "2026-01-01T00:00:37.000Z"
+          },
+          "end_timestamp": {
+            "relative": 41.439998626708984,
+            "absolute": "2026-01-01T00:00:38.000Z"
+          }
+        },
+        {
+          "text": "synthetic fixture utterance 27",
+          "start_timestamp": {
+            "relative": 41.7599983215332,
+            "absolute": "2026-01-01T00:00:39.000Z"
+          },
+          "end_timestamp": {
+            "relative": 41.84000015258789,
+            "absolute": "2026-01-01T00:00:40.000Z"
+          }
+        },
+        {
+          "text": "synthetic fixture utterance 28",
+          "start_timestamp": {
+            "relative": 41.84000015258789,
+            "absolute": "2026-01-01T00:00:40.000Z"
+          },
+          "end_timestamp": {
+            "relative": 41.84000015258789,
+            "absolute": "2026-01-01T00:00:40.000Z"
+          }
+        },
+        {
+          "text": "synthetic fixture utterance 29",
+          "start_timestamp": {
+            "relative": 42,
+            "absolute": "2026-01-01T00:00:41.000Z"
+          },
+          "end_timestamp": {
+            "relative": 42.08000183105469,
+            "absolute": "2026-01-01T00:00:42.000Z"
+          }
+        }
+      ],
+      "language_code": "en",
+      "participant": {
+        "id": 1001,
+        "name": "Speaker 1",
+        "is_host": true,
+        "platform": "unknown",
+        "extra_data": {}
+      }
+    },
+    "transcript": {
+      "id": "00000000-0000-4000-8000-000000000003",
+      "metadata": {}
+    },
+    "realtime_endpoint": {
+      "id": "00000000-0000-4000-8000-000000000004",
+      "metadata": {}
+    },
+    "recording": {
+      "id": "00000000-0000-4000-8000-000000000005",
+      "metadata": {}
+    },
+    "bot": {
+      "id": "00000000-0000-4000-8000-000000000001",
+      "metadata": {}
+    }
+  }
+}

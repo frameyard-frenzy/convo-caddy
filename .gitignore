@@ -1,0 +1,49 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.history/
+
+# Environment and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Node and build output
+node_modules/
+dist/
+out/
+native/uninstaller/.build/
+native/lifecycle-lock/build/
+coverage/
+.vite/
+.pnpm-store/
+playwright-report/
+test-results/
+*.log
+
+# Local runtime interview data — never commit real interview material
+var/
+recordings/
+exports/
+
+# Tool-local state is not canonical project memory
+.claude/settings.local.json
+.codex/
+.hermes/
+
+# .collab/ is tracked; do not ignore it.

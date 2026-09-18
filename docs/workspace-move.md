@@ -1,0 +1,17 @@
+# Moving the workspace
+
+Choose **Workspace → Move workspace…** from the top macOS menu. Select the destination **parent** folder. Caddy shows the exact source and new `Convo Caddy Workspace` child before confirmation. Cancel at either dialog changes nothing. Finish capture, saving, assistant requests and any open prep chooser first.
+
+The move includes all entries in the dedicated workspace: prep, archives, finished conversations, dotfiles, and files you added. It never merges into an existing destination, even an empty one. Same/nested locations and private app-state locations are rejected. The private Application Support directory, credentials and connections do not move.
+
+Caddy copies regular files and directories, preserves links without following their external targets, rebases absolute links into its own workspace, and preserves macOS extended attributes/resource forks, and verifies file and attribute hashes and the complete entry list before switching authority. It uses the same copy path on the same or another volume; it does not depend on a cross-volume rename. Filesystem special entries such as sockets or FIFOs are refused with the original retained. Keep external drives connected throughout the operation.
+
+Once verified, Caddy updates the private session binding and preferences, retains selected prep identity, replaces the ownership marker with the new directory identity, then retires the original entries. The current page and future exports use the new root, including after restart. Uninstall discovers the new root from those preferences and verifies that marker.
+
+A private `config/workspace-move.json` journal records only the paths, identities, phase and file verification metadata needed to recover interruption. Restart resumes copy/verification, reconciles a partially switched checkpoint/preferences pair, or finishes retiring a verified source. An interrupted source retirement deletes only entries still matching the recorded source, never newly added or changed files. The journal is removed only after completion. Uninstall refuses an outstanding move journal rather than erasing its recovery authority.
+
+If a move leaves a recovery journal, Caddy pauses prep selection, content edits, capture starts and export retries until startup recovery succeeds. Keep unsaved drafts separately before restarting; a restart closes the page. This applies both before and after authority switches. Cancel, a rejected destination before journaling, and a successful move release writes normally.
+
+If a move reports failure, keep both folders. Before authority switches, the original remains authoritative. After switching, the verified destination is authoritative; source retirement may still need recovery. Make the destination available, restore writable space, and restart Caddy. If a partial destination differs, source content changed, or directory identity cannot be verified, recovery stops and names the problem; it does not overwrite the difference or delete either copy. Preserve the error and both exact paths for a reviewed recovery. Do not delete the journal, change preferences by hand, or run broad cleanup.
+
+Source validation uses disposable filesystem fixtures and injected capture/dialog services. It does not attest native appearance, actual operator data migration, or physical external-drive hardware. A disposable APFS volume proved the copy across different filesystem device IDs. No live service is stopped or reconfigured by this feature.

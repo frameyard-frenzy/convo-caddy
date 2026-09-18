@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.19.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm check
+      - name: Select bounded synthetic browser evidence
+        if: always()
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          import shutil
+          root = Path("test-results")
+          total = 0
+          for folder in sorted({p.parent for pattern in ("**/trace.zip", "**/error-context.md", "**/transport-progress.json") for p in root.glob(pattern)}):
+              for name in ("trace.zip", "error-context.md", "close-progress.json", "transport-progress.json"):
+                  source = folder / name
+                  if not source.is_file():
+                      continue
+                  total += source.stat().st_size
+                  if total > 64 * 1024 * 1024:
+                      raise SystemExit("Synthetic failure evidence exceeds 64 MiB cap")
+                  target = Path("failed-test-evidence") / source.relative_to(root)
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(source, target)
+          PYTHON
+      - name: Preserve bounded synthetic browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failed-playwright-evidence
+          retention-days: 3
+          if-no-files-found: ignore
+          path: failed-test-evidence/
