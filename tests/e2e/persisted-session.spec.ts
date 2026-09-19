@@ -26,7 +26,7 @@ test("recovers the exact browser session after a real server restart", async ({
     await waitForServer(baseUrl, server);
     await page.goto(baseUrl);
     await expect(
-      page.getByRole("heading", { level: 2, name: "Saved interviews" }),
+      page.getByRole("heading", { level: 3, name: "Saved interviews" }),
     ).toBeVisible();
     await expect(page.getByTestId("finalization-status")).toContainText(
       "synthetic developer session is saved locally",

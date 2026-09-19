@@ -96,6 +96,7 @@ export function renderApp(
   model: RenderModel,
   handlers: RenderHandlers,
 ): void {
+  const workspaceDisclosures = captureWorkspaceDisclosures(root);
   const page = createElement("main", "app-shell");
   page.append(renderHeader(model.state, handlers));
 
@@ -120,8 +121,16 @@ export function renderApp(
       ),
     );
   }
-  if (model.workspaceOverview)
-    page.append(renderWorkspace(model.workspaceOverview, handlers, model));
+  page.append(
+    model.workspaceOverview
+      ? renderWorkspace(
+          model.workspaceOverview,
+          handlers,
+          model,
+          workspaceDisclosures,
+        )
+      : renderWorkspaceFallback(model, handlers),
+  );
 
   if (model.error) {
     const alert = createElement("p", "error-message", model.error);
@@ -157,11 +166,7 @@ export function renderApp(
     renderNotes(model.state.notes, handlers.showTranscript),
   );
   workspace.append(preparedColumn, captureColumn);
-  page.append(
-    workspace,
-    renderMarty(model, handlers),
-    renderSessionLifecycle(model, handlers),
-  );
+  page.append(workspace, renderMarty(model, handlers));
 
   page.append(renderTranscript(model, handlers));
 
@@ -625,6 +630,7 @@ function renderWorkspace(
   workspace: WorkspaceOverview,
   handlers: RenderHandlers,
   model: RenderModel,
+  disclosureState: ReadonlyMap<string, boolean>,
 ): HTMLElement {
   const section = createSection("Workspace and prep", "workspace-prep");
   section.append(createElement("p", "workspace-path", workspace.root));
@@ -645,7 +651,6 @@ function renderWorkspace(
     Boolean(model.choosingPrep) ||
     (model.state.capture.mode === "recall" && !isPreparation(model.state));
   choose.addEventListener("click", handlers.choosePrep);
-  section.append(choose);
   const save = createElement(
     "button",
     "secondary-button",
@@ -659,7 +664,17 @@ function renderWorkspace(
     Boolean(model.saving || model.choosingPrep || model.startingCapture) ||
     model.state.lifecycle.finalization.state === "complete";
   save.addEventListener("click", () => handlers.saveContent?.());
-  section.append(save);
+  const actions = createElement("div", "workspace-actions");
+  actions.append(choose, save);
+  section.append(actions);
+  if (model.state.capture.mode === "recall" && !isPreparation(model.state))
+    section.append(
+      createElement(
+        "p",
+        "empty-state workspace-edit-status",
+        "Edits save to this interview. The selected prep file stays unchanged.",
+      ),
+    );
   const selected = workspace.prep.valid.find(
     (entry) => entry.basename === workspace.selectedPrep,
   );
@@ -684,15 +699,45 @@ function renderWorkspace(
         `${workspace.selectedPrepDisplayName ?? workspace.selectedPrep} — selected for this interview`,
       ),
     );
-  if (model.state.capture.mode === "recall" && !isPreparation(model.state))
-    section.append(
-      createElement(
-        "p",
-        "empty-state",
-        "Edits save to this interview. The selected prep file stays unchanged.",
-      ),
-    );
-  for (const issue of workspace.finished.errors) {
+  section.append(
+    renderWorkspaceLifecycle(
+      model,
+      handlers,
+      workspace.finished,
+      workspace.root,
+      disclosureState,
+    ),
+  );
+  return section;
+}
+
+function renderWorkspaceFallback(
+  model: RenderModel,
+  handlers: RenderHandlers,
+): HTMLElement {
+  const section = createSection("Workspace", "workspace-prep");
+  section.classList.add("workspace-fallback");
+  section.append(
+    createElement(
+      "p",
+      "empty-state",
+      "Choose a workspace to prepare and save interviews.",
+    ),
+    renderWorkspaceLifecycle(model, handlers, null, null, new Map()),
+  );
+  return section;
+}
+
+function renderWorkspaceLifecycle(
+  model: RenderModel,
+  handlers: RenderHandlers,
+  finishedRecords: WorkspaceOverview["finished"] | null,
+  workspaceRoot: string | null,
+  disclosureState: ReadonlyMap<string, boolean>,
+): HTMLElement {
+  const section = createElement("div", "workspace-lifecycle");
+  section.append(createElement("h3", undefined, "Saved interviews"));
+  for (const issue of finishedRecords?.errors ?? []) {
     const alert = createElement(
       "p",
       "error-message",
@@ -701,19 +746,29 @@ function renderWorkspace(
     alert.setAttribute("role", "alert");
     section.append(alert);
   }
-  if (workspace.finished.valid.length) {
+  if (finishedRecords?.valid.length) {
     const finished = createElement("details", "finished-records");
-    finished.append(
-      createElement(
-        "summary",
-        undefined,
-        `Finished conversations (${workspace.finished.valid.length})`,
-      ),
+    const finishedKey = `workspace:${workspaceRoot ?? "none"}`;
+    finished.dataset.disclosureKey = finishedKey;
+    finished.id = `finished-${domIdentity(finishedKey)}`;
+    finished.open = disclosureState.get(finishedKey) ?? false;
+    const finishedSummary = createElement(
+      "summary",
+      undefined,
+      `Finished conversations (${finishedRecords.valid.length})`,
     );
-    for (const record of workspace.finished.valid) {
+    finishedSummary.id = `${finished.id}-summary`;
+    finished.append(finishedSummary);
+    for (const record of finishedRecords.valid) {
       const item = createElement("details");
+      const recordKey = `${finishedKey}:record:${record.name}`;
+      item.dataset.disclosureKey = recordKey;
+      item.id = `finished-${domIdentity(recordKey)}`;
+      item.open = disclosureState.get(recordKey) ?? false;
+      const itemSummary = createElement("summary", undefined, record.name);
+      itemSummary.id = `${item.id}-summary`;
       item.append(
-        createElement("summary", undefined, record.name),
+        itemSummary,
         Object.assign(document.createElement("pre"), {
           textContent: record.markdown,
         }),
@@ -722,7 +777,30 @@ function renderWorkspace(
     }
     section.append(finished);
   }
+  appendSessionLifecycle(section, model, handlers);
   return section;
+}
+
+function captureWorkspaceDisclosures(
+  root: HTMLElement,
+): ReadonlyMap<string, boolean> {
+  const state = new Map<string, boolean>();
+  for (const details of root.querySelectorAll<HTMLDetailsElement>(
+    ".workspace-prep details[data-disclosure-key]",
+  )) {
+    const key = details.dataset.disclosureKey;
+    if (key) state.set(key, details.open);
+  }
+  return state;
+}
+
+function domIdentity(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36);
 }
 
 function actionButton(
@@ -935,11 +1013,11 @@ function renderMarty(
   return section;
 }
 
-function renderSessionLifecycle(
+function appendSessionLifecycle(
+  section: HTMLElement,
   model: RenderModel,
   handlers: RenderHandlers,
-): HTMLElement {
-  const section = createSection("Saved interviews", "session-lifecycle");
+): void {
   const finalization = model.state.lifecycle.finalization;
   const status = createElement("p", "finalization-status");
   status.dataset.testid = "finalization-status";
@@ -1031,7 +1109,6 @@ function renderSessionLifecycle(
     }
     section.append(createElement("h3", undefined, "History"), list);
   }
-  return section;
 }
 
 function isSessionMutable(state: SessionState): boolean {
@@ -1092,6 +1169,22 @@ function renderTranscript(
   const turns = selectedIds
     ? model.state.transcript.filter((turn) => selectedIds.has(turn.id))
     : model.state.transcript;
+
+  if (selectedIds) {
+    const filterStatus = createElement("div", "transcript-filter-status");
+    const label = createElement("p", undefined, "Filtered transcript");
+    label.setAttribute("role", "status");
+    const clear = createElement(
+      "button",
+      "secondary-button",
+      "Show full transcript",
+    );
+    clear.id = "transcript-filter-clear";
+    clear.type = "button";
+    clear.addEventListener("click", () => handlers.showTranscript(null));
+    filterStatus.append(label, clear);
+    content.append(filterStatus);
+  }
 
   if (turns.length === 0) {
     content.append(

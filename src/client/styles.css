@@ -572,11 +572,21 @@ h3 {
   font-weight: 600;
 }
 
-.session-lifecycle > .primary-button {
+.workspace-lifecycle {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--divider);
+}
+
+.workspace-lifecycle > h3:first-child {
+  margin-top: 0;
+}
+
+.workspace-lifecycle > .primary-button {
   margin-top: 0.75rem;
 }
 
-.session-lifecycle h3 {
+.workspace-lifecycle h3 {
   margin: 1rem 0 0.5rem;
 }
 
@@ -607,6 +617,25 @@ h3 {
 .transcript-panel > .secondary-button {
   float: right;
   margin-top: -0.55rem;
+}
+
+.transcript-filter-status {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  clear: both;
+  margin-top: 1rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--divider);
+  border-bottom: 1px solid var(--divider);
+}
+
+.transcript-filter-status p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
 }
 
 .transcript-list {
@@ -778,5 +807,15 @@ li[data-empty="true"] .inline-text {
 }
 
 #save-content {
-  margin-inline-start: 8px;
+  margin: 0;
+}
+
+.workspace-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.workspace-edit-status {
+  margin-top: 8px;
 }
