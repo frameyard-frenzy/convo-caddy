@@ -201,13 +201,19 @@ function isConsistentCheck(check, successState, allowedFailureCodes) {
 }
 function normalizeConnectionResult(value) {
   const safe = value && typeof value === "object" ? value : {};
-  const recall = safe.recallCredentials && typeof safe.recallCredentials === "object" ? safe.recallCredentials : {state:"unverified"};
-  const check = candidate => candidate && typeof candidate === "object" && typeof candidate.state === "string" ? candidate : {state:"unverified"};
-  return {recallCredentials:recall,localWebhook:check(safe.localWebhook),ngrokEndpoint:check(safe.ngrokEndpoint),publicWebhook:check(safe.publicWebhook)};
+  const unavailable = () => ({state:"unverified"});
+  const recall = safe.recallCredentials && typeof safe.recallCredentials === "object" && ["authenticated_read_only","authentication_rejected","unavailable"].includes(safe.recallCredentials.state) && !Object.hasOwn(safe.recallCredentials,"diagnostic") ? safe.recallCredentials : unavailable();
+  const check = (candidate, successState, allowedFailureCodes) => isConsistentCheck(candidate,successState,allowedFailureCodes) ? candidate : unavailable();
+  return {
+    recallCredentials:recall,
+    localWebhook:check(safe.localWebhook,"verified_synthetic",new Set([...warningPublicCodes,"local_listener_failed"])),
+    ngrokEndpoint:check(safe.ngrokEndpoint,"verified_exact_domain",new Set(["ngrok_start_failed","ngrok_domain_mismatch","not_attempted"])),
+    publicWebhook:check(safe.publicWebhook,"verified_synthetic",new Set([...warningPublicCodes,"not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]))
+  };
 }
 function classifyConnectionResult(raw) {
   const value = normalizeConnectionResult(raw);
-  const recallConsistent = ["authenticated_read_only","authentication_rejected","unavailable"].includes(value.recallCredentials.state) && !Object.hasOwn(value.recallCredentials,"diagnostic");
+  const recallConsistent = value.recallCredentials.state !== "unverified";
   const localConsistent = isConsistentCheck(value.localWebhook,"verified_synthetic",new Set([...warningPublicCodes,"local_listener_failed"]));
   const ngrokConsistent = isConsistentCheck(value.ngrokEndpoint,"verified_exact_domain",new Set(["ngrok_start_failed","ngrok_domain_mismatch","not_attempted"]));
   const publicConsistent = isConsistentCheck(value.publicWebhook,"verified_synthetic",new Set([...warningPublicCodes,"not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]));
@@ -224,11 +230,10 @@ function callbackReportLimits(classified) {
 }
 function showCallbackReport(classified) {
   const {severity,value} = classified;
-  const recallStates = new Set(["authenticated_read_only","authentication_rejected","unavailable"]);
   callbackReport.value = [
     "Convo Caddy callback diagnostic",
     "Overall severity: " + severity,
-    "Recall credentials: " + (recallStates.has(value.recallCredentials.state) ? value.recallCredentials.state : "unavailable"),
+    "Recall credentials: " + value.recallCredentials.state,
     "Local callback: " + diagnosticToken(value.localWebhook),
     "ngrok endpoint: " + diagnosticToken(value.ngrokEndpoint),
     "Public callback: " + diagnosticToken(value.publicWebhook),

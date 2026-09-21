@@ -957,6 +957,94 @@ for (const [name, mutate] of [
   });
 }
 
+for (const [name, publicWebhook, privateValue] of [
+  [
+    "HTTP status string canary",
+    {
+      state: "failed",
+      diagnostic: {
+        code: "http_status",
+        httpStatus: "SYNTHETIC_PRIVATE_CANARY",
+      },
+    },
+    "SYNTHETIC_PRIVATE_CANARY",
+  ],
+  [
+    "unknown state canary",
+    { state: "SYNTHETIC_PRIVATE_STATE" },
+    "SYNTHETIC_PRIVATE_STATE",
+  ],
+  [
+    "success with contradictory diagnostic",
+    {
+      state: "verified_synthetic",
+      diagnostic: { code: "connection_reset" },
+    },
+    "connection reset",
+  ],
+  ["failed without diagnostic", { state: "failed" }, "Could not connect"],
+  [
+    "failed with invalid diagnostic",
+    { state: "failed", diagnostic: { code: "SYNTHETIC_PRIVATE_CODE" } },
+    "SYNTHETIC_PRIVATE_CODE",
+  ],
+] as const) {
+  test(`invalid public evidence renders consistently: ${name}`, async ({
+    page,
+    setup,
+  }) => {
+    await enterDraft(page);
+    setup.setConnectionResult({
+      ...validConnectionResult(),
+      publicWebhook,
+    });
+    await page.locator("#test-connections").click();
+    await expect(page.locator("#component-results")).toContainText(
+      "Public callback: unverified",
+    );
+    await expect(page.locator("#callback-report")).toHaveValue(
+      /Public callback: unverified/,
+    );
+    await expect(page.locator("#component-results")).not.toContainText(
+      privateValue,
+    );
+    await expect(page.locator("#callback-report")).not.toHaveValue(
+      new RegExp(privateValue),
+    );
+  });
+}
+
+test("valid component errors stay precise beside malformed evidence", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setConnectionResult({
+    ...validConnectionResult(),
+    localWebhook: { state: "SYNTHETIC_PRIVATE_STATE" },
+    publicWebhook: {
+      state: "failed",
+      diagnostic: { code: "connection_reset" },
+    },
+  });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#component-results")).toContainText(
+    "Local callback: unverified",
+  );
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Local callback: unverified/,
+  );
+  await expect(page.locator("#component-results")).toContainText(
+    "public route reset the connection",
+  );
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Public callback: failed \[connection_reset\]/,
+  );
+  await expect(page.locator("#component-results")).not.toContainText(
+    "SYNTHETIC_PRIVATE_STATE",
+  );
+});
+
 test("redirect and non-204 HTTP results are warnings", async ({
   page,
   setup,
@@ -1034,6 +1122,7 @@ test("disclosure and copied evidence reset on edit and held rerun", async ({
     input.dispatchEvent(new Event("input", { bubbles: true }));
   });
   rerun.release();
+  await setup.waitForFinished("recall", 3);
   await expect(page.locator("#recall-outcome")).toContainText(
     "Changed — test again",
   );
@@ -1156,7 +1245,7 @@ test("diagnostic report rejects an unknown secret-like code", async ({
     /Overall severity: failure/,
   );
   await expect(page.locator("#callback-report")).toHaveValue(
-    /\[connect_failed\]/,
+    /Public callback: unverified/,
   );
   await expect(page.locator("#callback-report")).not.toHaveValue(
     /PRIVATE_TOKEN/,
