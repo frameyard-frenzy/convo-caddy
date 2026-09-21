@@ -82,12 +82,8 @@ describe("user-owned workspace", () => {
     const first = publishFinishedConversation(input);
     const second = publishFinishedConversation(input);
     expect(second).toEqual(first);
-    expect(first.directoryName).toBe(
-      "2026-09-04-131415Z-my-interview-555555555555",
-    );
-    expect(first.archiveFileName).toBe(
-      "2026-09-04-141516Z-my-interview-555555555555.json",
-    );
+    expect(first.directoryName).toBe("Interview 2026-09-04-131415Z");
+    expect(first.archiveFileName).toBe("Interview 2026-09-04-131415Z.json");
     expect(scanFinishedConversations(root).valid[0]?.files).toEqual([
       "manifest.json",
       "conversation.json",
@@ -150,7 +146,7 @@ describe("user-owned workspace", () => {
       publishFinishedConversation(input, {
         beforeFinalDirectoryPublished: (directory) => mkdirSync(directory),
       }),
-    ).toThrow(/collision/i);
+    ).toThrow(/collision|different name/i);
   });
 
   it("does not overwrite collisions and leaves externally changed current prep", () => {
@@ -176,7 +172,9 @@ describe("user-owned workspace", () => {
     });
     expect(readFileSync(source, "utf8")).toBe("changed");
     writeFileSync(path.join(result.directory, "prep.json"), "collision");
-    expect(() => publishFinishedConversation(input)).toThrow(/collision/i);
+    expect(() => publishFinishedConversation(input)).toThrow(
+      /collision|different name/i,
+    );
   });
 
   it("rejects a finished record whose deterministic markdown was changed", () => {
@@ -307,4 +305,89 @@ describe("user-owned workspace", () => {
     expect(() => publishFinishedConversation(input)).not.toThrow();
     expect(scanFinishedConversations(root).valid).toHaveLength(1);
   });
+});
+
+it("uses the exact human name for the record and archive, rejecting equivalent other records", () => {
+  const root = temporaryWorkspace();
+  initializeUserWorkspace(root);
+  const state = createSessionState({
+    sessionId: "11111111-2222-4333-8444-555555555555",
+    startedAt: "2026-09-20T12:00:00.000Z",
+  });
+  state.lifecycle.displayName = "Café Team";
+  const input = {
+    root,
+    state,
+    prepSourceFile: "TEMPLATE.md",
+    prepSourceBytes: readPrep(root, "TEMPLATE.md").sourceBytes,
+    completedAt: "2026-09-20T14:00:00.000Z",
+  };
+  const result = publishFinishedConversation(input);
+  expect(result.directoryName).toBe("Café Team");
+  expect(result.archiveFileName).toBe("Café Team.md");
+  expect(publishFinishedConversation(input)).toEqual(result);
+  for (const name of ["Café Team", "CAFÉ TEAM", "Cafe\u0301 Team"]) {
+    const other = structuredClone(state);
+    other.sessionId = "22222222-2222-4333-8444-555555555555";
+    other.lifecycle.displayName = name;
+    expect(() =>
+      publishFinishedConversation({ ...input, state: other }),
+    ).toThrow(/different name/i);
+  }
+  expect(scanFinishedConversations(root).valid).toHaveLength(1);
+});
+
+it.each([
+  "../escape",
+  "a/b",
+  "a\\b",
+  ".hidden",
+  "ends.",
+  " leading",
+  "a:b",
+  "a\u0000b",
+])("rejects unsafe interview name %j before publication", (name) => {
+  const root = temporaryWorkspace();
+  initializeUserWorkspace(root);
+  const state = createSessionState({
+    sessionId: "11111111-2222-4333-8444-555555555555",
+    startedAt: "2026-09-20T12:00:00.000Z",
+  });
+  state.lifecycle.displayName = name;
+  expect(() =>
+    publishFinishedConversation({
+      root,
+      state,
+      prepSourceFile: "TEMPLATE.md",
+      prepSourceBytes: readPrep(root, "TEMPLATE.md").sourceBytes,
+      completedAt: "2026-09-20T14:00:00.000Z",
+    }),
+  ).toThrow(/name/i);
+  expect(scanFinishedConversations(root).valid).toHaveLength(0);
+});
+
+it("rejects a name already used by a legacy named record without migrating it", () => {
+  const root = temporaryWorkspace();
+  initializeUserWorkspace(root);
+  const state = createSessionState({
+    sessionId: "11111111-2222-4333-8444-555555555555",
+    startedAt: "2026-09-20T12:00:00.000Z",
+  });
+  state.lifecycle.displayName = "Legacy café";
+  const input = {
+    root,
+    state,
+    prepSourceFile: "TEMPLATE.md",
+    prepSourceBytes: readPrep(root, "TEMPLATE.md").sourceBytes,
+    completedAt: "2026-09-20T14:00:00.000Z",
+  };
+  const legacy = publishFinishedConversation({ ...input, legacyNames: true });
+  const other = structuredClone(state);
+  other.sessionId = "22222222-2222-4333-8444-555555555555";
+  expect(() => publishFinishedConversation({ ...input, state: other })).toThrow(
+    /different name/i,
+  );
+  expect(
+    scanFinishedConversations(root).valid.map((record) => record.name),
+  ).toEqual([legacy.directoryName]);
 });

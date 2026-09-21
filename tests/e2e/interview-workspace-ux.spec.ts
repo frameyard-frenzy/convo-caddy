@@ -146,11 +146,11 @@ test("citation context visibly filters the transcript and clear keeps the live f
       .evaluateAll((turns) =>
         turns.map((turn) => turn.id.replace(/^transcript-/, "")),
       );
-  const filterStatus = transcript.getByText("Filtered transcript", {
+  const filterStatus = transcript.getByText("Filtered", {
     exact: true,
   });
   const clear = transcript.getByRole("button", {
-    name: "Show full transcript",
+    name: "Clear filter",
     exact: true,
   });
   const disclosure = transcript.locator("#transcript-disclosure");
@@ -226,6 +226,16 @@ test("citation context visibly filters the transcript and clear keeps the live f
       await disclosure.focus();
       await page.keyboard.press("Tab");
       await expect(clear).toBeFocused();
+      await page.screenshot({
+        path: testInfo.outputPath(`focused-transcript-${width}.png`),
+        fullPage: true,
+      });
+      expect(
+        await page
+          .locator(".transcript-turn")
+          .first()
+          .evaluate((el) => getComputedStyle(el).borderTopWidth),
+      ).toBe("0px");
       const focusedClear = await clear.elementHandle();
       expect(focusedClear).not.toBeNull();
       const requestsBeforeRefresh = readinessRequests;
@@ -241,6 +251,10 @@ test("citation context visibly filters the transcript and clear keeps the live f
       await expect(page.locator("#transcript-content")).toBeVisible();
       await expect(disclosure).toBeFocused();
       await expect.poll(visibleTurnIds).toEqual(fullIds);
+      await page.screenshot({
+        path: testInfo.outputPath(`full-transcript-${width}.png`),
+        fullPage: true,
+      });
     }
   }
 
@@ -250,129 +264,48 @@ test("citation context visibly filters the transcript and clear keeps the live f
   await expect(page.locator("#transcript-content")).toBeVisible();
 });
 
-test("finished conversation disclosure choices and focus survive real status rerenders", async ({
+test("History shows only the latest completed name for empty, single and many unsorted records", async ({
   page,
 }) => {
-  let readinessRequests = 0;
-  let reportedWorkspaceRoot: string | undefined;
-  let workspace = finishedWorkspace;
+  await page.route("**/api/events", (route) => route.abort());
   await page.route("**/api/workspace", (route) =>
-    route.fulfill({ json: { workspace } }),
+    route.fulfill({ json: { workspace: finishedWorkspace } }),
   );
-  await page.route("**/api/runtime/readiness", async (route) => {
-    readinessRequests += 1;
-    await route.fulfill({
-      json: {
-        readiness: null,
-        ...(reportedWorkspaceRoot
-          ? { workspaceRoot: reportedWorkspaceRoot }
-          : {}),
-      },
-    });
-  });
+  let sessions: object[] = [];
+  await page.route("**/api/sessions", (route) =>
+    route.fulfill({ json: { sessions } }),
+  );
   await page.goto("/");
-
-  const outer = page.locator("details.finished-records");
-  const inner = outer.locator("details").filter({ hasText: "2026-09-18-beta" });
-  await outer.locator(":scope > summary").click();
-  await inner.locator(":scope > summary").click();
-  await inner.locator(":scope > summary").focus();
-  const scrollBeforeRefresh = await page.evaluate(() => {
-    window.scrollTo(0, document.documentElement.scrollHeight);
-    return window.scrollY;
-  });
-  const focusedInnerBeforeRefresh = await inner.elementHandle();
-  expect(focusedInnerBeforeRefresh).not.toBeNull();
-  const requestAtOpen = readinessRequests;
-  await expect.poll(() => readinessRequests).toBeGreaterThan(requestAtOpen);
-  await expect
-    .poll(() =>
-      focusedInnerBeforeRefresh?.evaluate((element) => !element.isConnected),
-    )
-    .toBe(true);
-  await expect(outer).toHaveJSProperty("open", true);
-  await expect(inner).toHaveJSProperty("open", true);
-  await expect(inner.locator(":scope > summary")).toBeFocused();
-  expect(await page.evaluate(() => window.scrollY)).toBe(scrollBeforeRefresh);
-
-  workspace = {
-    ...workspace,
-    finished: {
-      ...workspace.finished,
-      valid: [...workspace.finished.valid].reverse(),
+  await expect(page.locator(".session-history-item")).toHaveCount(0);
+  sessions = [
+    {
+      sessionId: "latest",
+      displayName: "Latest café",
+      startedAt: "2026-09-01T12:00:00Z",
+      completedAt: "2026-09-20T12:00:00Z",
+      lifecycle: "completed",
     },
-  };
-  reportedWorkspaceRoot = "/synthetic/force-one-refresh";
-  await expect(outer.locator(":scope > details > summary")).toHaveText([
-    "2026-09-18-beta",
-    "2026-09-18-alpha",
+  ];
+  await page.reload();
+  await expect(page.locator(".session-history-item")).toHaveText([
+    "Latest café",
   ]);
-  reportedWorkspaceRoot = undefined;
-  await expect(outer).toHaveJSProperty("open", true);
-  await expect(inner).toHaveJSProperty("open", true);
-  await expect(inner.locator(":scope > summary")).toBeFocused();
-
-  await inner.locator(":scope > summary").click();
-  const closedInnerBeforeRefresh = await inner.elementHandle();
-  expect(closedInnerBeforeRefresh).not.toBeNull();
-  const requestAtClose = readinessRequests;
-  await expect.poll(() => readinessRequests).toBeGreaterThan(requestAtClose);
-  await expect
-    .poll(() =>
-      closedInnerBeforeRefresh?.evaluate((element) => !element.isConnected),
-    )
-    .toBe(true);
-  await expect(outer).toHaveJSProperty("open", true);
-  await expect(inner).toHaveJSProperty("open", false);
-
-  await outer.locator(":scope > summary").click();
-  const closedOuterBeforeRefresh = await outer.elementHandle();
-  expect(closedOuterBeforeRefresh).not.toBeNull();
-  const requestAtOuterClose = readinessRequests;
-  await expect
-    .poll(() => readinessRequests)
-    .toBeGreaterThan(requestAtOuterClose);
-  await expect
-    .poll(() =>
-      closedOuterBeforeRefresh?.evaluate((element) => !element.isConnected),
-    )
-    .toBe(true);
-  await expect(outer).toHaveJSProperty("open", false);
-  await outer.locator(":scope > summary").click();
-  await expect(outer).toHaveJSProperty("open", true);
-  await expect(inner).toHaveJSProperty("open", false);
-
-  workspace = {
-    ...workspace,
-    finished: {
-      ...workspace.finished,
-      valid: workspace.finished.valid.filter(
-        (record) => record.name !== "2026-09-18-beta",
-      ),
-    },
-  };
-  reportedWorkspaceRoot = "/synthetic/force-removal-refresh";
-  await expect(outer.locator("details")).toHaveCount(1);
-  await expect(outer.locator(":scope > details > summary")).toHaveText([
-    "2026-09-18-alpha",
+  sessions = [
+    ...Array.from({ length: 40 }, (_, i) => ({
+      sessionId: String(i),
+      displayName: `Older ${i}`,
+      startedAt: "2026-09-19T12:00:00Z",
+      completedAt: "2026-09-19T13:00:00Z",
+      lifecycle: "completed",
+    })),
+    ...sessions,
+  ];
+  sessions.splice(20, 0, sessions.pop()!);
+  await page.reload();
+  await expect(page.locator(".session-history-item")).toHaveText([
+    "Latest café",
   ]);
-  reportedWorkspaceRoot = undefined;
-  await expect(outer).toHaveJSProperty("open", true);
-  await expect(outer.locator("details").first()).toHaveJSProperty(
-    "open",
-    false,
-  );
-
-  workspace = { ...workspace, root: "/synthetic/Other Workspace" };
-  reportedWorkspaceRoot = workspace.root;
-  await expect(
-    page.locator(".workspace-prep > .workspace-path").first(),
-  ).toHaveText("/synthetic/Other Workspace");
-  reportedWorkspaceRoot = undefined;
-  await expect(page.locator("details.finished-records")).toHaveJSProperty(
-    "open",
-    false,
-  );
+  await expect(page.locator(".finished-records details")).toHaveCount(0);
 });
 
 for (const width of [1100, 390]) {
@@ -396,10 +329,7 @@ for (const width of [1100, 390]) {
     await expect(page.locator(".app-shell > .session-lifecycle")).toHaveCount(
       0,
     );
-    await expect(top.locator("details.finished-records")).not.toHaveJSProperty(
-      "open",
-      true,
-    );
+    await expect(top.locator("details.finished-records")).toHaveCount(0);
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= window.innerWidth,

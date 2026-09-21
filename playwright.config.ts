@@ -16,7 +16,7 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: "node_modules/.bin/tsx src/server/main.ts",
+      command: "node --import tsx src/server/main.ts",
       env: {
         CONVO_CADDY_DATA_DIR: dataRoot,
         CONVO_CADDY_TEST_MODE: "1",
@@ -27,7 +27,7 @@ export default defineConfig({
       timeout: 30_000,
     },
     {
-      command: "node_modules/.bin/tsx scripts/setup-fixture-server.ts",
+      command: "node --import tsx scripts/setup-fixture-server.ts",
       url: `http://127.0.0.1:${setupPort}/`,
       reuseExistingServer: false,
       timeout: 30_000,

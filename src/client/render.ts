@@ -13,6 +13,7 @@ import type { WorkspaceOverview } from "./api.js";
 type WorkspaceSessionSummary = {
   sessionId: string;
   startedAt: string;
+  completedAt: string;
   displayName: string | null;
   lifecycle: "completed";
 };
@@ -96,7 +97,6 @@ export function renderApp(
   model: RenderModel,
   handlers: RenderHandlers,
 ): void {
-  const workspaceDisclosures = captureWorkspaceDisclosures(root);
   const page = createElement("main", "app-shell");
   page.append(renderHeader(model.state, handlers));
 
@@ -123,12 +123,7 @@ export function renderApp(
   }
   page.append(
     model.workspaceOverview
-      ? renderWorkspace(
-          model.workspaceOverview,
-          handlers,
-          model,
-          workspaceDisclosures,
-        )
+      ? renderWorkspace(model.workspaceOverview, handlers, model)
       : renderWorkspaceFallback(model, handlers),
   );
 
@@ -630,7 +625,6 @@ function renderWorkspace(
   workspace: WorkspaceOverview,
   handlers: RenderHandlers,
   model: RenderModel,
-  disclosureState: ReadonlyMap<string, boolean>,
 ): HTMLElement {
   const section = createSection("Workspace and prep", "workspace-prep");
   section.append(createElement("p", "workspace-path", workspace.root));
@@ -699,15 +693,7 @@ function renderWorkspace(
         `${workspace.selectedPrepDisplayName ?? workspace.selectedPrep} — selected for this interview`,
       ),
     );
-  section.append(
-    renderWorkspaceLifecycle(
-      model,
-      handlers,
-      workspace.finished,
-      workspace.root,
-      disclosureState,
-    ),
-  );
+  section.append(renderWorkspaceLifecycle(model, handlers, workspace.finished));
   return section;
 }
 
@@ -723,7 +709,7 @@ function renderWorkspaceFallback(
       "empty-state",
       "Choose a workspace to prepare and save interviews.",
     ),
-    renderWorkspaceLifecycle(model, handlers, null, null, new Map()),
+    renderWorkspaceLifecycle(model, handlers, null),
   );
   return section;
 }
@@ -732,8 +718,6 @@ function renderWorkspaceLifecycle(
   model: RenderModel,
   handlers: RenderHandlers,
   finishedRecords: WorkspaceOverview["finished"] | null,
-  workspaceRoot: string | null,
-  disclosureState: ReadonlyMap<string, boolean>,
 ): HTMLElement {
   const section = createElement("div", "workspace-lifecycle");
   section.append(createElement("h3", undefined, "Saved interviews"));
@@ -746,61 +730,8 @@ function renderWorkspaceLifecycle(
     alert.setAttribute("role", "alert");
     section.append(alert);
   }
-  if (finishedRecords?.valid.length) {
-    const finished = createElement("details", "finished-records");
-    const finishedKey = `workspace:${workspaceRoot ?? "none"}`;
-    finished.dataset.disclosureKey = finishedKey;
-    finished.id = `finished-${domIdentity(finishedKey)}`;
-    finished.open = disclosureState.get(finishedKey) ?? false;
-    const finishedSummary = createElement(
-      "summary",
-      undefined,
-      `Finished conversations (${finishedRecords.valid.length})`,
-    );
-    finishedSummary.id = `${finished.id}-summary`;
-    finished.append(finishedSummary);
-    for (const record of finishedRecords.valid) {
-      const item = createElement("details");
-      const recordKey = `${finishedKey}:record:${record.name}`;
-      item.dataset.disclosureKey = recordKey;
-      item.id = `finished-${domIdentity(recordKey)}`;
-      item.open = disclosureState.get(recordKey) ?? false;
-      const itemSummary = createElement("summary", undefined, record.name);
-      itemSummary.id = `${item.id}-summary`;
-      item.append(
-        itemSummary,
-        Object.assign(document.createElement("pre"), {
-          textContent: record.markdown,
-        }),
-      );
-      finished.append(item);
-    }
-    section.append(finished);
-  }
   appendSessionLifecycle(section, model, handlers);
   return section;
-}
-
-function captureWorkspaceDisclosures(
-  root: HTMLElement,
-): ReadonlyMap<string, boolean> {
-  const state = new Map<string, boolean>();
-  for (const details of root.querySelectorAll<HTMLDetailsElement>(
-    ".workspace-prep details[data-disclosure-key]",
-  )) {
-    const key = details.dataset.disclosureKey;
-    if (key) state.set(key, details.open);
-  }
-  return state;
-}
-
-function domIdentity(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(36);
 }
 
 function actionButton(
@@ -1094,19 +1025,18 @@ function appendSessionLifecycle(
 
   if (model.sessionHistory.length > 0) {
     const list = createElement("ul", "session-history");
-    for (const item of [...model.sessionHistory].reverse()) {
-      const row = createElement("li", "session-history-item");
-      row.append(
-        createElement(
-          "p",
-          "session-history-summary",
-          `${item.displayName ? `${item.displayName} — ` : ""}${formatHistoryTimestamp(
-            item.startedAt,
-          )} — ${capitalize(item.lifecycle)}`,
-        ),
-      );
-      list.append(row);
-    }
+    const latest = [...model.sessionHistory].sort(
+      (a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt),
+    )[0]!;
+    const row = createElement("li", "session-history-item");
+    row.append(
+      createElement(
+        "p",
+        "session-history-summary",
+        latest.displayName ?? "Interview",
+      ),
+    );
+    list.append(row);
     section.append(createElement("h3", undefined, "History"), list);
   }
 }
@@ -1130,13 +1060,6 @@ function formatMissingMilestone(
   }[milestone];
 }
 
-function formatHistoryTimestamp(timestamp: string): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
-
 function renderTranscript(
   model: RenderModel,
   handlers: RenderHandlers,
@@ -1157,7 +1080,10 @@ function renderTranscript(
       ? handlers.hideTranscript()
       : handlers.showTranscript(null),
   );
-  section.prepend(close);
+  const header = createElement("div", "transcript-header");
+  const heading = section.querySelector("h2")!;
+  header.append(heading, close);
+  section.prepend(header);
   const content = createElement("div");
   content.id = "transcript-content";
   content.hidden = !model.transcriptVisible;
@@ -1172,18 +1098,14 @@ function renderTranscript(
 
   if (selectedIds) {
     const filterStatus = createElement("div", "transcript-filter-status");
-    const label = createElement("p", undefined, "Filtered transcript");
+    const label = createElement("p", undefined, "Filtered");
     label.setAttribute("role", "status");
-    const clear = createElement(
-      "button",
-      "secondary-button",
-      "Show full transcript",
-    );
+    const clear = createElement("button", "text-button", "Clear filter");
     clear.id = "transcript-filter-clear";
     clear.type = "button";
     clear.addEventListener("click", () => handlers.showTranscript(null));
     filterStatus.append(label, clear);
-    content.append(filterStatus);
+    header.append(filterStatus);
   }
 
   if (turns.length === 0) {

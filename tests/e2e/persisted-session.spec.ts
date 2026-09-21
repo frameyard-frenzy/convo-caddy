@@ -93,7 +93,7 @@ type StartedServer = {
 function startServer(port: number, dataRoot: string): StartedServer {
   const child = spawn(
     process.execPath,
-    ["node_modules/tsx/dist/cli.mjs", "src/server/main.ts"],
+    ["--import", "tsx", "src/server/main.ts"],
     {
       cwd: repositoryRoot,
       env: {

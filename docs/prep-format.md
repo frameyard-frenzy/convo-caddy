@@ -68,3 +68,14 @@ under `prep/current/` remains the internal working-copy identity; display does
 not rename it or change writeback authority. Restart derives the label from the
 saved original target. Older bindings without that target show their exact
 stored working filename rather than guessing by stripping a suffix.
+
+
+## Interview filenames and History
+
+**Saved interview name (optional)** controls the saved folder and prep archive name, separately from the prep’s **Interview title**. For example, `Café Team` saves to `finished-conversations/Café Team/` and `prep/archive/Café Team.md`. The four files inside the record retain their standard names. Safe spaces, case and Unicode are preserved. No timestamp, template-copy ID or UUID is appended to a supplied name. Without a name, Caddy uses `Interview <UTC start timestamp>`.
+
+Choose a unique name in this workspace. Case and canonically equivalent Unicode spellings count as duplicates, including existing prep archives. Names are limited to 80 characters and 240 UTF-8 bytes; path separators, control/invisible formatting characters, filename-reserved punctuation, leading dots, trailing dots and leading/trailing whitespace are rejected with a request for a different name. Caddy does not silently sanitize distinct names into the same file. A rejected save keeps the page draft and blocks Ask, capture and finishing until corrected. The server checks availability again before publication.
+
+You may change the saved name while preparing or during the interview. After start, this updates the interview checkpoint, not the source prep; the final record folder, archive and saved-location pointer all use the accepted name. Once publication has begun, the record is immutable and retries verify the same record without overwriting another. Interrupted older finalizations retain legacy paths. Existing completed records stay where they are. Recovery tolerates JSON property-order changes from checkpoint parsing without rewriting existing files; prep and Markdown must still match exactly.
+
+**History** shows only the name of the latest finished interview, ordered by completion time. It stays one row regardless of archive size. All records remain available through **Workspace → Show Workspace in Finder**, inside `finished-conversations`. Current save status, errors and **New interview** remain in **Saved interviews**.

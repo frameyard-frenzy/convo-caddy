@@ -153,6 +153,7 @@ it("keeps Markdown exact through selected checkpoint restart, publication, archi
   publishFinishedConversation({
     ...input,
     state: { ...state, sessionId: "11111111-2222-4333-8444-666666666666" },
+    legacyNames: true,
     prepSourceFile: legacy.basename,
     prepSourceBytes: legacy.sourceBytes,
   });

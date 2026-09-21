@@ -81,7 +81,7 @@ export function applyContentEdit(
             "Changed duration must be 1–480 minutes; an unchanged legacy duration can be kept.",
           )
           .optional(),
-        displayName: z.string().trim().max(80).optional(),
+        displayName: z.string().max(80).optional(),
       })
       .parse(JSON.parse(edit.text));
     next.humanContext = {

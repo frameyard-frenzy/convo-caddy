@@ -20,6 +20,7 @@ import { FileSessionRepository } from "../../src/server/persistence/file-session
 import { FakeMartyProvider } from "../../src/server/marty/fake-marty-provider.js";
 import {
   initializeUserWorkspace,
+  publishFinishedConversation,
   scanFinishedConversations,
 } from "../../src/server/workspace/user-workspace.js";
 
@@ -2397,3 +2398,93 @@ for (const ordering of [
     }
   });
 }
+
+for (const action of ["ask", "finish", "capture"] as const)
+  test(`duplicate name retains the inline draft and blocks ${action}`, async ({
+    page,
+    prep,
+  }) => {
+    const workspace = path.join(prep.root, "workspace");
+    const other = structuredClone(prep.service.getSnapshot());
+    other.sessionId = "55555555-2222-4333-8444-555555555555";
+    other.lifecycle.displayName = "Taken café";
+    publishFinishedConversation({
+      root: workspace,
+      state: other,
+      prepSourceFile: "TEMPLATE.md",
+      prepSourceBytes: source,
+      completedAt: "2026-09-20T14:00:00.000Z",
+    });
+    if (action === "finish")
+      await prep.service.startRecallCapture({
+        meetingUrl: "https://teams.live.com/meet/123456789",
+      });
+    const name = page.getByRole("textbox", {
+      name: "Saved interview name (optional)",
+      exact: true,
+    });
+    await name.fill("TAKEN CAFÉ");
+    let downstream = 0;
+    page.on("request", (request) => {
+      if (
+        /\/api\/(input|session\/finish-saving|capture\/recall\/start)$/.test(
+          new URL(request.url()).pathname,
+        )
+      )
+        downstream++;
+    });
+    if (action === "ask") await ask(page, "What matters?");
+    else if (action === "finish") endCapture(prep.service);
+    else {
+      await page
+        .getByLabel("Personal Microsoft Teams meeting link")
+        .fill("https://teams.live.com/meet/123456789");
+      await page
+        .getByRole("button", { name: "Start live capture", exact: true })
+        .click();
+    }
+    await expect(page.getByRole("alert")).toContainText(
+      "Choose a different name",
+    );
+    await expect(name).toHaveText("TAKEN CAFÉ");
+    expect(downstream).toBe(0);
+    expect(prep.service.getProviderCallCount()).toBe(0);
+    expect(scanFinishedConversations(workspace).valid).toHaveLength(1);
+    await name.fill("Available café");
+    if (action === "finish") {
+      await page
+        .getByRole("button", { name: "Finish saving", exact: true })
+        .click();
+      await expect
+        .poll(() => scanFinishedConversations(workspace).valid.length)
+        .toBe(2);
+      expect(
+        readFileSync(
+          path.join(workspace, "prep/archive/Available café.md"),
+          "utf8",
+        ),
+      ).toBe(source);
+    } else {
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+      await expect
+        .poll(() => prep.service.getSnapshot().lifecycle.displayName)
+        .toBe("Available café");
+    }
+  });
+
+test("unsafe saved-name whitespace is rejected without silently renaming the draft", async ({
+  page,
+  prep,
+}) => {
+  const name = page.getByRole("textbox", {
+    name: "Saved interview name (optional)",
+    exact: true,
+  });
+  await name.fill(" Café Team ");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Choose a different name",
+  );
+  await expect(name).toHaveText(" Café Team ");
+  expect(prep.service.getSnapshot().lifecycle.displayName).toBeNull();
+});

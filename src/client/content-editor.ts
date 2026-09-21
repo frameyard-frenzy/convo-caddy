@@ -261,7 +261,9 @@ export class ContentEditor {
           const text =
             field === "plannedDurationMinutes"
               ? String(Number(draft.text))
-              : draft.text.trim();
+              : field === "displayName"
+                ? draft.text
+                : draft.text.trim();
           draft.sent = text;
           this.pending = {
             edit: {

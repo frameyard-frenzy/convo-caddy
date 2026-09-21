@@ -9,6 +9,7 @@ import type { RuntimeReadiness } from "../server/connectivity/readiness.js";
 type WorkspaceSessionSummary = {
   sessionId: string;
   startedAt: string;
+  completedAt: string;
   displayName: string | null;
   lifecycle: "completed";
 };

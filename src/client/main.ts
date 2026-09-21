@@ -28,6 +28,7 @@ import type { RuntimeReadiness } from "../server/connectivity/readiness.js";
 type WorkspaceSessionSummary = {
   sessionId: string;
   startedAt: string;
+  completedAt: string;
   displayName: string | null;
   lifecycle: "completed";
 };
@@ -251,12 +252,10 @@ async function runStartRecallCapture(
 
   try {
     await flushEdits();
-    const trimmedDisplayName = (
-      editor.metadata?.displayName.text ?? displayName
-    ).trim();
+    const savedDisplayName = editor.metadata?.displayName.text ?? displayName;
     const result = await startRecallCapture({
       meetingUrl,
-      ...(trimmedDisplayName ? { displayName: trimmedDisplayName } : {}),
+      ...(savedDisplayName ? { displayName: savedDisplayName } : {}),
     });
     state = result.state;
     if (!result.ok) {

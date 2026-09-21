@@ -614,38 +614,44 @@ h3 {
   color: #6f2f25;
 }
 
-.transcript-panel > .secondary-button {
-  float: right;
-  margin-top: -0.55rem;
+.transcript-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
 }
-
+.transcript-header h2 {
+  margin: 0;
+  margin-right: auto;
+}
 .transcript-filter-status {
   display: flex;
-  gap: 0.75rem;
   align-items: center;
-  justify-content: space-between;
-  clear: both;
-  margin-top: 1rem;
-  padding: 0.75rem 0;
-  border-top: 1px solid var(--divider);
-  border-bottom: 1px solid var(--divider);
+  gap: 0.75rem;
 }
-
 .transcript-filter-status p {
   margin: 0;
   color: var(--muted);
-  font-size: 0.9rem;
-  font-weight: 600;
+  font-size: 0.85rem;
 }
-
+.text-button {
+  background: transparent;
+  color: var(--signal);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  padding: 0.2rem 0.3rem;
+  font: inherit;
+  font-size: 0.85rem;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .transcript-list {
   clear: both;
   padding-top: 0.5rem;
 }
-
 .transcript-turn {
   padding-top: 0.75rem;
-  border-top: 1px solid var(--divider);
+  border: 0;
 }
 
 .transcript-turn p:last-child {

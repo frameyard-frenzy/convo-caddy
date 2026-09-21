@@ -270,7 +270,11 @@ for (const width of [1280, 900, 390]) {
         "opacity",
         "0.45",
       );
-      await focusEvidence(main, "summary", `focus-main-disclosure-${width}`);
+      await focusEvidence(
+        main,
+        "#transcript-disclosure",
+        `focus-main-disclosure-${width}`,
+      );
       for (const [selector, name] of [
         ["#recall-api-key", "field"],
         ["#hermes-mode", "select"],
