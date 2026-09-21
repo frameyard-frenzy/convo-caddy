@@ -208,6 +208,8 @@ The olive live-preparation banner retains its historical two-row right side: aut
 
 ## Connection storage and assistant boundary
 
+The Recall/ngrok setup test classifies exact component evidence. It succeeds only when Recall read-only authentication, the local signed callback, exact-domain ngrok startup, and the public synthetic callback all pass. Authentication rejection, unavailable Recall, failed prerequisites, inconsistent or unknown results, and mixed errors are blocking failures with expanded diagnostics. Only a known attempted public HTTP/transport failure after all prerequisites pass is an amber warning: the local-origin route is unverified, but Recall-originated delivery remains unknown. The warning immediately recommends one human-operated private Teams test that confirms actual live transcript text. Synthetic success does not verify real delivery, dashboard selections, matching workspace signing-secret ownership, or retention. The test remains advisory to Save and never bypasses capture startup safety.
+
 Current connection settings are strict schema v4 in owner-private
 `config/connections.json`. Generation-scoped secrets use macOS Keychain service
 `com.frameyard.convocaddy`. Existing `legacyMigration` metadata is inert and

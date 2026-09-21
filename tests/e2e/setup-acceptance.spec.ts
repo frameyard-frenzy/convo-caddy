@@ -720,7 +720,20 @@ for (const code of [
       ...(code === "http_status" ? { httpStatus: 502 } : {}),
     });
     await page.locator("#test-connections").click();
-    await expect(page.locator("#recall-outcome")).toContainText("failed");
+    const warningCodes = new Set([
+      "http_status",
+      "timeout",
+      "dns_failed",
+      "tls_certificate_failed",
+      "tls_protocol_failed",
+      "connection_refused",
+      "connection_reset",
+      "network_unreachable",
+      "connect_failed",
+    ]);
+    await expect(page.locator("#recall-outcome")).toContainText(
+      warningCodes.has(code) ? "Warning" : "failed",
+    );
     await page.locator("#component-results").evaluate((el) => {
       const details = el.closest("details");
       if (details) details.open = true;
@@ -748,8 +761,12 @@ test("failed public route produces a copyable private-safe report and edits stal
   setup.setCallbackDiagnostic({ code: "tls_protocol_failed" });
   await page.locator("#test-connections").click();
   await expect(page.locator("#recall-outcome")).toContainText(
-    "public callback network route failed",
+    "Warning — Setup not fully verified",
   );
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "private Teams test call",
+  );
+  await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
   const report = page.locator("#callback-report");
   await expect(report).toBeVisible();
   await expect(report).toHaveValue(
@@ -759,6 +776,8 @@ test("failed public route produces a copyable private-safe report and edits stal
     /Public callback: failed \[tls_protocol_failed\]/,
   );
   await expect(report).toHaveValue(/does not prove Recall delivery/);
+  await expect(report).toHaveValue(/Overall severity: warning/);
+  await expect(report).toHaveValue(/real private Teams test call/);
   await expect(report).not.toHaveValue(
     /fixture\.ngrok|synthetic-.*canary|https:\/\//,
   );
@@ -777,6 +796,112 @@ test("failed public route produces a copyable private-safe report and edits stal
     "Changed — test again",
   );
 });
+
+test("authentication failure, unavailable Recall, and mixed failures remain blocking", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setRecallCredentialState("authentication_rejected");
+  setup.setCallbackDiagnostic({ code: "connection_reset" });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "Recall authentication was rejected",
+  );
+  await expect(page.locator("#recall-outcome")).not.toContainText("Warning");
+  await expect(page.locator("#recall-details")).toHaveAttribute("open", "");
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Overall severity: failure/,
+  );
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /real private Teams test call/,
+  );
+
+  setup.setRecallCredentialState("unavailable");
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "Recall authentication could not be verified",
+  );
+  await expect(page.locator("#recall-outcome")).not.toContainText(
+    "API key was rejected",
+  );
+});
+
+test("malformed connection results fail closed and open diagnostics", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setMalformedConnectionResult(true);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "Connection checks failed",
+  );
+  await expect(page.locator("#recall-outcome")).not.toContainText("Warning");
+  await expect(page.locator("#recall-details")).toHaveAttribute("open", "");
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Overall severity: failure/,
+  );
+});
+
+test("success states truthful limits and closes earlier failure details", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setLocalListenerFailure(true);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-details")).toHaveAttribute("open", "");
+  setup.setLocalListenerFailure(false);
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "Synthetic checks passed",
+  );
+  await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
+  await expect(page.locator("#component-results")).toContainText(
+    "do not verify real Recall transcript delivery",
+  );
+  await expect(page.locator("#component-results")).toContainText(
+    "workspace signing secret",
+  );
+});
+
+for (const width of [1100, 390]) {
+  test(`connection severity visual evidence at ${width}`, async ({
+    page,
+    setup,
+  }, testInfo) => {
+    await page.setViewportSize({ width, height: 900 });
+    await enterDraft(page);
+    setup.setCallbackDiagnostic({ code: "connection_reset" });
+    await page.locator("#test-connections").click();
+    await page.screenshot({
+      path: testInfo.outputPath(`connection-warning-${width}.png`),
+      fullPage: true,
+    });
+
+    setup.setLocalListenerFailure(true);
+    await page.locator("#test-connections").click();
+    await expect(page.locator("#recall-details")).toHaveAttribute("open", "");
+    await page.screenshot({
+      path: testInfo.outputPath(`connection-failure-expanded-${width}.png`),
+      fullPage: true,
+    });
+
+    setup.setLocalListenerFailure(false);
+    setup.setCallbackDiagnostic(null);
+    await page.locator("#test-connections").click();
+    await page.screenshot({
+      path: testInfo.outputPath(`connection-success-${width}.png`),
+      fullPage: true,
+    });
+    expect(
+      await page.evaluate(
+        () => document.documentElement.scrollWidth <= innerWidth,
+      ),
+    ).toBe(true);
+  });
+}
 
 test("diagnostic report rejects an unknown secret-like code", async ({
   page,

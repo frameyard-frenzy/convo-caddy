@@ -1,6 +1,6 @@
 # Optional practice interview
 
-This is a separately authorized synthetic practice and acceptance exercise, not an installation prerequisite. First finish [Save and choose a workspace](../README.md#save-and-choose-a-workspace). Use no customer data. The retained step labels match historical acceptance evidence.
+This is a separately authorized, human-operated synthetic practice and acceptance exercise, not an installation prerequisite. It is also the decisive next check when **Test Recall & ngrok** warns that this Mac could not verify its local-origin public route: Recall-originated delivery follows a different network path. First finish [Save and choose a workspace](../README.md#save-and-choose-a-workspace), or return to the app if valid settings are already saved; stop on any Save/runtime failure. Keep normal network and security policy. Use no customer data. The retained step labels match historical acceptance evidence.
 
 ### 18b. Create a practice prep
 
@@ -36,7 +36,7 @@ Expected: its ten-second recording/transcription notice appears. If not, stop th
 
 **Interview Mac:** speak a synthetic sentence in Teams, then deliberately open Caddy's transcript.
 
-Expected: transcript text arrives. Setup checks cannot prove this live result; stop acceptance if it fails. Next: 20a.
+Expected: the actual sentence appears as live transcript text in Caddy, not merely a bot-joined state. Setup checks cannot prove this live result; if it fails, preserve whether failure occurred at creation, lobby, admission, transcript, or finalization, then stop rather than repeatedly creating bots or disabling protections. Next: 20a.
 
 ### 20a. Check a prepared question
 

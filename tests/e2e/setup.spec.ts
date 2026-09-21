@@ -35,7 +35,7 @@ test("retains one masked draft through test, discovery, assistant and failures",
 
   await page.getByRole("button", { name: "Test Recall & ngrok" }).click();
   await expect(page.locator("#recall-outcome")).toContainText(
-    "Connection checks passed",
+    "Synthetic checks passed",
   );
   await page.screenshot({
     path: "test-results/setup-success.png",

@@ -27,7 +27,7 @@ async function request(path, options) {
 function setOutcome(group, kind, text) {
   const node = outcomes[group];
   node.className = "outcome " + kind;
-  node.textContent = (kind === "success" ? "✓ " : kind === "failure" ? "✕ " : "") + text;
+  node.textContent = (kind === "success" ? "✓ " : kind === "warning" ? "⚠ Warning — " : kind === "failure" ? "✕ " : "") + text;
 }
 function details(group, items) {
   lists[group].replaceChildren();
@@ -154,10 +154,11 @@ function callbackReportResult(value) {
   return "Result: Caddy attempted the signed synthetic public callback through the temporary public tunnel, but the route was not verified.";
 }
 function callbackReportNextAction(value) {
-  if (value.recallCredentials.state !== "authenticated_read_only") return "Next action: resolve the Recall credential result shown above before relying on the complete connection check. Do not share or dump credentials.";
+  if (value.recallCredentials.state === "authentication_rejected") return "Next action: check that the Recall API key belongs to the US West workspace, then retry. Do not share or dump credentials.";
+  if (value.recallCredentials.state !== "authenticated_read_only") return "Next action: retry when this Mac can reach the Recall API. If it repeats, check network access and Recall service availability; this result does not prove the key is wrong.";
   if (value.localWebhook.state !== "verified_synthetic") return "Next action: retry the local callback listener once. If it repeats, share this secret-free report for local listener troubleshooting.";
   if (value.ngrokEndpoint.state !== "verified_exact_domain") return "Next action: check the ngrok authtoken, stable domain and domain ownership. Do not stop an unfamiliar process or reset unrelated credentials.";
-  if (value.publicWebhook.state === "verified_synthetic") return "Next action: no callback recovery is needed for this synthetic check. Confirm Recall dashboard event selections separately.";
+  if (value.publicWebhook.state === "verified_synthetic") return "Next action: no callback recovery is needed for these synthetic checks. Confirm Recall dashboard event selections and the workspace signing secret separately.";
   const code = safeDiagnosticCode(value.publicWebhook.diagnostic);
   const actions = {
     http_status: "Next action: check that the actual running Caddy copy owns the ngrok domain and that no redirect or access-policy page intercepts it.",
@@ -176,14 +177,34 @@ function callbackReportNextAction(value) {
   };
   return actions[code] || actions.connect_failed;
 }
+const warningPublicCodes = new Set(["http_status","timeout","dns_failed","tls_certificate_failed","tls_protocol_failed","connection_refused","connection_reset","network_unreachable","connect_failed"]);
+function isWarningPublicDiagnostic(diagnostic) {
+  if (!diagnostic || !warningPublicCodes.has(diagnostic.code)) return false;
+  return diagnostic.code !== "http_status" || (Number.isInteger(diagnostic.httpStatus) && diagnostic.httpStatus >= 100 && diagnostic.httpStatus <= 599);
+}
+function normalizeConnectionResult(value) {
+  const safe = value && typeof value === "object" ? value : {};
+  const recall = safe.recallCredentials && typeof safe.recallCredentials === "object" ? safe.recallCredentials : {state:"unverified"};
+  const check = candidate => candidate && typeof candidate === "object" && typeof candidate.state === "string" ? candidate : {state:"unverified",diagnostic:{code:"connect_failed"}};
+  return {recallCredentials:recall,localWebhook:check(safe.localWebhook),ngrokEndpoint:check(safe.ngrokEndpoint),publicWebhook:check(safe.publicWebhook)};
+}
+function classifyConnectionResult(raw) {
+  const value = normalizeConnectionResult(raw);
+  const prerequisitesPass = value.recallCredentials.state === "authenticated_read_only" && value.localWebhook.state === "verified_synthetic" && value.ngrokEndpoint.state === "verified_exact_domain";
+  if (prerequisitesPass && value.publicWebhook.state === "verified_synthetic") return {severity:"success",value};
+  const warning = prerequisitesPass && value.publicWebhook.state === "failed" && isWarningPublicDiagnostic(value.publicWebhook.diagnostic);
+  return {severity:warning ? "warning" : "failure",value};
+}
 function callbackReportLimits(value) {
-  const base = "Limits: no bot was created; this does not prove Recall delivery, dashboard event selections, or provider retention.";
+  const base = "Limits: no bot was created; this does not prove Recall delivery, dashboard event selections, that the entered signing secret matches the Recall workspace, or provider retention.";
   return value.ngrokEndpoint.state === "verified_exact_domain" ? base + " The temporary tunnel closes after the test, so a later offline HTTP result is not this test failing." : base;
 }
 function showCallbackReport(value) {
+  const severity = classifyConnectionResult(value).severity;
   const recallStates = new Set(["authenticated_read_only","authentication_rejected","unavailable"]);
   callbackReport.value = [
     "Convo Caddy callback diagnostic",
+    "Overall severity: " + severity,
     "Recall credentials: " + (recallStates.has(value.recallCredentials.state) ? value.recallCredentials.state : "unavailable"),
     "Local callback: " + diagnosticToken(value.localWebhook),
     "ngrok endpoint: " + diagnosticToken(value.ngrokEndpoint),
@@ -191,17 +212,19 @@ function showCallbackReport(value) {
     callbackReportResult(value),
     callbackReportLimits(value),
     callbackReportNextAction(value),
+    ...(severity === "warning" ? ["Recommended next action: make one real private Teams test call before relying on this setup; admit the visible bot deliberately and verify live transcript text in Caddy."] : []),
     "Safety: do not disable protection globally, dump credentials, or retry until green."
   ].join("\\n");
   callbackReportPanel.hidden = false;
 }
 byId("test-connections").addEventListener("click", () => run("recall", "Checking…", () => request("/api/setup/connections/test", {method:"POST", body:JSON.stringify(recallPayload())}), value => {
-  const states = [value.recallCredentials.state,value.localWebhook.state,value.ngrokEndpoint.state,value.publicWebhook.state];
-  const passed = states.every(state => ["authenticated_read_only","verified_synthetic","verified_exact_domain"].includes(state));
-  const publicRouteOnly = value.recallCredentials.state === "authenticated_read_only" && value.localWebhook.state === "verified_synthetic" && value.ngrokEndpoint.state === "verified_exact_domain" && value.publicWebhook.state === "failed";
-  setOutcome("recall", passed ? "success" : "failure", passed ? "Connection checks passed" : publicRouteOnly ? "The public callback network route failed — keep the entered keys and review the route guidance below." : "Connection checks failed — open Diagnostic details below for the failed step and next action.");
-  details("recall", ["Recall credentials: " + value.recallCredentials.state.replaceAll("_"," "), "Local callback: " + callbackDetail(value.localWebhook), "ngrok endpoint: " + callbackDetail(value.ngrokEndpoint), "Public callback: " + callbackDetail(value.publicWebhook), "No bot was created; dashboard subscriptions and provider retention were not verified."]);
-  showCallbackReport(value);
+  const classified = classifyConnectionResult(value), result = classified.value;
+  const failureTitle = result.recallCredentials.state === "authentication_rejected" ? "Recall authentication was rejected — check the API key and US West workspace." : result.recallCredentials.state === "unavailable" ? "Recall authentication could not be verified — retry, then check network or Recall service availability." : "Connection checks failed — review the expanded diagnostics for the first blocking step.";
+  const text = classified.severity === "success" ? "Synthetic checks passed" : classified.severity === "warning" ? "Setup not fully verified. This Mac could not verify its public callback route. Wi-Fi or ISP security filtering, DNS, a VPN/proxy, or firewall policy may block this local-origin request even when Recall delivery works; a tunnel, domain, redirect, or access-policy problem is also possible. Make one real private Teams test call before relying on setup." : failureTitle;
+  setOutcome("recall", classified.severity, text);
+  byId("recall-details").open = classified.severity === "failure";
+  details("recall", ["Recall credentials: " + String(result.recallCredentials.state).replaceAll("_"," "), "Local callback: " + callbackDetail(result.localWebhook), "ngrok endpoint: " + callbackDetail(result.ngrokEndpoint), "Public callback: " + callbackDetail(result.publicWebhook), "No bot was created. These synthetic checks do not verify real Recall transcript delivery, dashboard event selections, a matching workspace signing secret, or provider retention."]);
+  showCallbackReport(result);
 }));
 byId("copy-callback-report").addEventListener("click", async () => {
   if (callbackReportPanel.hidden || !callbackReport.value) return;

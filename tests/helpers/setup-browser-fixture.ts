@@ -108,6 +108,11 @@ async function createFixture(
   let writes = 0,
     commits = 0,
     runtimeStarts = 0;
+  let recallCredentialState:
+    | "authenticated_read_only"
+    | "authentication_rejected"
+    | "unavailable" = "authenticated_read_only";
+  let malformedConnectionResult = false;
   let storageFailure = false;
   let callbackDiagnostic:
     | import("../../src/server/desktop/recall-ngrok-connection-test.js").CallbackDiagnostic
@@ -369,9 +374,20 @@ async function createFixture(
         connectionTester: {
           async test(input) {
             await step("recall", input);
+            if (malformedConnectionResult)
+              return {
+                generation: input.generation,
+                recallCredentials: {},
+                localWebhook: { state: "verified_synthetic" },
+                ngrokEndpoint: { state: "verified_exact_domain" },
+                publicWebhook: {
+                  state: "failed",
+                  diagnostic: { code: "unknown_private_code" },
+                },
+              } as never;
             return {
               generation: input.generation,
-              recallCredentials: { state: "authenticated_read_only" },
+              recallCredentials: { state: recallCredentialState },
               localWebhook: localListenerFailure
                 ? {
                     state: "failed",
@@ -465,6 +481,12 @@ async function createFixture(
     setCallbackDiagnostic(value: typeof callbackDiagnostic) {
       callbackDiagnostic = value;
     },
+    setRecallCredentialState(value: typeof recallCredentialState) {
+      recallCredentialState = value;
+    },
+    setMalformedConnectionResult(value: boolean) {
+      malformedConnectionResult = value;
+    },
     setNgrokStartupFailure(value: boolean) {
       ngrokStartupFailure = value;
     },
@@ -549,7 +571,7 @@ export async function enterDraft(page: Page, hermes = true) {
 export async function checkAll(page: Page) {
   await page.locator("#test-connections").click();
   await expect(page.locator("#recall-outcome")).toContainText(
-    "Connection checks passed",
+    "Synthetic checks passed",
   );
   await page.locator("#discover-hermes-profiles").click();
   await expect(page.locator("#hermes-outcome")).toContainText("models loaded");

@@ -68,13 +68,29 @@ categories, with allowlisted codes visible in Diagnostic details. Bodies, URLs,
 query strings, secret headers and native error messages are not returned. Failed endpoint startup marks the public POST not attempted,
 not a failed round trip. Startup timeout ownership/late cleanup still gates retry.
 
-Open **Diagnostic details**. For endpoint startup failure, check the authtoken,
-assigned domain and competing domain owner. For a public HTTP status, check
-routing, redirects or access policies. For timeout/connect failure, check DNS,
-network and ngrok availability. Retest deliberately. These are next checks, not
-claims about the live cause. Neither this synthetic proof nor a successful
-read-only Recall request verifies dashboard subscriptions or real signature
-ownership. Live callback causes require separate diagnosis.
+Severity is evidence-bounded. Exact Recall authentication, local callback, and
+exact-domain endpoint prerequisites plus a known attempted public HTTP/transport
+failure produce an amber warning with collapsed technical details. The probe is
+local-origin, so Wi-Fi/ISP filtering, DNS/TLS, VPN/proxy or firewall policy may
+affect it without proving anything about Recall-originated delivery; a real
+tunnel/domain/redirect/access-policy problem remains possible. The warning's
+next action is one human-operated private Teams test that admits the visible bot
+and verifies actual live transcript text. Unknown, missing, inconsistent,
+not-attempted or prerequisite-failure results remain red failures and open
+details automatically. Mixed results follow the first blocking prerequisite;
+never recommend proceeding to a call while one is proven broken.
+
+For endpoint startup failure, check the authtoken, assigned domain and competing
+domain owner. For a public HTTP status, check routing, redirects or access
+policies. For timeout/connect failure, check DNS, network and ngrok availability.
+Authentication rejection calls for API-key/US-West-workspace review; unavailable
+Recall calls for retry/network/service checks and is not evidence that the key is
+wrong. Retest deliberately. These are next checks, not claims about the live
+cause. Neither synthetic success nor locally signing and checking with the same
+entered secret verifies real delivery, dashboard subscriptions, matching
+workspace signature ownership or retention. Save remains advisory-independent;
+capture startup safety does not. The copied summary records overall severity and
+local-origin limitations without values, URLs or raw exceptions.
 
 ## Listener acquisition and scope
 
