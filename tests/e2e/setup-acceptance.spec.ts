@@ -1114,6 +1114,7 @@ test("disclosure and copied evidence reset on edit and held rerun", async ({
   const rerun = setup.hold("recall");
   await page.locator("#test-connections").click();
   await setup.waitFor("recall", 3);
+  await expect(page.locator("#test-connections")).toBeDisabled();
   await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
   await expect(page.locator("#callback-report")).toHaveValue("");
   await page.locator("#ngrok-domain").evaluate((element) => {
@@ -1123,6 +1124,7 @@ test("disclosure and copied evidence reset on edit and held rerun", async ({
   });
   rerun.release();
   await setup.waitForFinished("recall", 3);
+  await expect(page.locator("#test-connections")).toBeEnabled();
   await expect(page.locator("#recall-outcome")).toContainText(
     "Changed — test again",
   );
