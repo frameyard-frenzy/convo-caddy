@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   accessSync,
   constants,
@@ -240,6 +241,7 @@ export type PublishInput = {
   prepSourceFile: string;
   prepSourceBytes: string;
   completedAt: string;
+  legacyNames?: boolean;
 };
 export type PublishHooks = {
   beforeFinalDirectoryPublished?: (directory: string) => void;
@@ -247,6 +249,105 @@ export type PublishHooks = {
   afterArchiveOpened?: (descriptor: number) => void;
   afterArchivePublished?: () => void;
 };
+
+export function finishedConversationNames(
+  input: Pick<
+    PublishInput,
+    "state" | "prepSourceFile" | "completedAt" | "legacyNames"
+  >,
+) {
+  const extension = prepExtension(input.prepSourceFile);
+  if (input.legacyNames) {
+    const prepName = safeName(
+      path.basename(input.prepSourceFile, path.extname(input.prepSourceFile)),
+    );
+    const suffix = input.state.sessionId
+      .replaceAll("-", "")
+      .replace(/[^A-Za-z0-9]/g, "")
+      .slice(-12);
+    if (suffix.length !== 12)
+      throw new Error("Session UUID cannot produce the required suffix.");
+    const directoryName = `${compactUtc(input.state.startedAt)}-${prepName}-${suffix}`;
+    const archiveFileName = `${compactUtc(input.completedAt)}-${prepName}-${suffix}${extension}`;
+    return { directoryName, archiveFileName };
+  }
+  const name =
+    input.state.lifecycle.displayName ??
+    `Interview ${compactUtc(input.state.startedAt)}`;
+  validateInterviewName(name);
+  return { directoryName: name, archiveFileName: `${name}${extension}` };
+}
+
+export function validateInterviewName(name: string): void {
+  if (
+    !name ||
+    name.length > 80 ||
+    name !== name.trim() ||
+    name.startsWith(".") ||
+    name.endsWith(".") ||
+    /[\/\\:<>"|?*\p{Cc}\p{Cf}]/u.test(name) ||
+    Buffer.byteLength(name, "utf8") > 240
+  ) {
+    throw new Error(
+      "Interview name is not a safe filename. Choose a different name without path separators, control characters, or leading/trailing spaces or dots.",
+    );
+  }
+}
+
+const nameKey = (name: string) =>
+  name.normalize("NFD").toUpperCase().toLowerCase();
+
+// A record establishes archive ownership; matching prep bytes alone never do.
+export function assertInterviewNameAvailable(
+  root: string,
+  state: SessionState,
+  prepSourceFile: string,
+): void {
+  const { directoryName } = finishedConversationNames({
+    state,
+    prepSourceFile,
+    completedAt: state.startedAt,
+  });
+  // Legacy folders may have generated names while retaining a human name in
+  // their saved session. Reserve that name too, without migrating the record.
+  for (const record of scanFinishedConversations(root).valid) {
+    const savedName = record.conversation.session.lifecycle.displayName;
+    if (
+      savedName &&
+      nameKey(savedName) === nameKey(directoryName) &&
+      record.manifest.sessionId !== state.sessionId
+    )
+      throw new Error(
+        "Interview name is already in use. Choose a different name.",
+      );
+  }
+  let owned = false;
+  for (const entry of readdirSync(path.join(root, "finished-conversations"))) {
+    if (nameKey(entry) !== nameKey(directoryName)) continue;
+    const directory = path.join(root, "finished-conversations", entry);
+    try {
+      if (
+        !lstatSync(directory).isDirectory() ||
+        lstatSync(directory).isSymbolicLink()
+      )
+        throw new Error();
+      const record = readFinishedRecord(directory, entry);
+      if (record.manifest.sessionId !== state.sessionId) throw new Error();
+      owned = true;
+    } catch {
+      throw new Error(
+        "Interview name is already in use (or its saved record needs recovery). Choose a different name.",
+      );
+    }
+  }
+  for (const entry of readdirSync(path.join(root, "prep", "archive"))) {
+    const stem = entry.replace(/\.(md|json)$/i, "");
+    if (nameKey(stem) === nameKey(directoryName) && !owned)
+      throw new Error(
+        "Interview name is already in use by an archived prep. Choose a different name.",
+      );
+  }
+}
 
 export function publishFinishedConversation(
   input: PublishInput,
@@ -256,17 +357,9 @@ export function publishFinishedConversation(
   parsePrep(input.prepSourceBytes, input.prepSourceFile);
   const prepFile = `prep${extension}` as const;
   const files = [...BASE_FILES, prepFile] as const;
-  const prepName = safeName(
-    path.basename(input.prepSourceFile, path.extname(input.prepSourceFile)),
-  );
-  const suffix = input.state.sessionId
-    .replaceAll("-", "")
-    .replace(/[^A-Za-z0-9]/g, "")
-    .slice(-12);
-  if (suffix.length !== 12)
-    throw new Error("Session UUID cannot produce the required suffix.");
-  const directoryName = `${compactUtc(input.state.startedAt)}-${prepName}-${suffix}`;
-  const archiveFileName = `${compactUtc(input.completedAt)}-${prepName}-${suffix}${extension}`;
+  const { directoryName, archiveFileName } = finishedConversationNames(input);
+  if (!input.legacyNames)
+    assertInterviewNameAvailable(input.root, input.state, input.prepSourceFile);
   const directory = path.join(
     input.root,
     "finished-conversations",
@@ -301,13 +394,19 @@ export function publishFinishedConversation(
     const staging = path.join(
       input.root,
       "finished-conversations",
-      `.${directoryName}.tmp-${randomUUID()}`,
+      `.interview.tmp-${randomUUID()}`,
     );
     mkdirSync(staging);
     try {
       for (const name of files)
         writeFileSync(path.join(staging, name), contents[name], { flag: "wx" });
       hooks.beforeFinalDirectoryPublished?.(directory);
+      if (!input.legacyNames)
+        assertInterviewNameAvailable(
+          input.root,
+          input.state,
+          input.prepSourceFile,
+        );
       if (existsSync(directory))
         throw new Error("Finished conversation collision.");
       renameSync(staging, directory);
@@ -406,9 +505,21 @@ function verifyExactDirectory(
     required.some((file, i) => files[i] !== file)
   )
     throw new Error("Finished conversation collision.");
-  for (const file of required)
-    if (readFileSync(path.join(directory, file), "utf8") !== expected[file])
+  for (const file of required) {
+    const target = path.join(directory, file);
+    if (!lstatSync(target).isFile())
       throw new Error("Finished conversation collision.");
+    const actual = readFileSync(target, "utf8");
+    if (actual === expected[file]) continue;
+    // Checkpoint parsing can reorder JSON object keys on restart. Accept equal
+    // JSON values without rewriting the published file; all text stays exact.
+    if (
+      (file === "manifest.json" || file === "conversation.json") &&
+      isDeepStrictEqual(JSON.parse(actual), JSON.parse(expected[file]!))
+    )
+      continue;
+    throw new Error("Finished conversation collision.");
+  }
 }
 
 function writeOrVerifyExclusive(
@@ -432,7 +543,12 @@ function writeOrVerifyExclusive(
     descriptor = undefined;
   } catch (error) {
     if (descriptor !== undefined) closeSync(descriptor);
-    if (existsSync(file) && readFileSync(file, "utf8") === bytes) return;
+    if (
+      existsSync(file) &&
+      lstatSync(file).isFile() &&
+      readFileSync(file, "utf8") === bytes
+    )
+      return;
     if (created) {
       try {
         unlinkSync(file);

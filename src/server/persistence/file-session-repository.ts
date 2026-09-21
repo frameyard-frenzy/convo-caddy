@@ -29,6 +29,7 @@ export type ActiveWorkspaceBinding = {
     completedAt: string;
     directoryName: string;
     archiveFileName: string;
+    namingVersion?: 1;
   };
 };
 export type PersistedSession = {
@@ -70,6 +71,7 @@ const bindingSchema = z.strictObject({
       completedAt: z.iso.datetime(),
       directoryName: z.string().min(1),
       archiveFileName: z.string().min(1),
+      namingVersion: z.literal(1).optional(),
     })
     .optional(),
 });

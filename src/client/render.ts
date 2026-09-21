@@ -13,6 +13,7 @@ import type { WorkspaceOverview } from "./api.js";
 type WorkspaceSessionSummary = {
   sessionId: string;
   startedAt: string;
+  completedAt: string;
   displayName: string | null;
   lifecycle: "completed";
 };
@@ -120,8 +121,11 @@ export function renderApp(
       ),
     );
   }
-  if (model.workspaceOverview)
-    page.append(renderWorkspace(model.workspaceOverview, handlers, model));
+  page.append(
+    model.workspaceOverview
+      ? renderWorkspace(model.workspaceOverview, handlers, model)
+      : renderWorkspaceFallback(model, handlers),
+  );
 
   if (model.error) {
     const alert = createElement("p", "error-message", model.error);
@@ -157,11 +161,7 @@ export function renderApp(
     renderNotes(model.state.notes, handlers.showTranscript),
   );
   workspace.append(preparedColumn, captureColumn);
-  page.append(
-    workspace,
-    renderMarty(model, handlers),
-    renderSessionLifecycle(model, handlers),
-  );
+  page.append(workspace, renderMarty(model, handlers));
 
   page.append(renderTranscript(model, handlers));
 
@@ -645,7 +645,6 @@ function renderWorkspace(
     Boolean(model.choosingPrep) ||
     (model.state.capture.mode === "recall" && !isPreparation(model.state));
   choose.addEventListener("click", handlers.choosePrep);
-  section.append(choose);
   const save = createElement(
     "button",
     "secondary-button",
@@ -659,7 +658,17 @@ function renderWorkspace(
     Boolean(model.saving || model.choosingPrep || model.startingCapture) ||
     model.state.lifecycle.finalization.state === "complete";
   save.addEventListener("click", () => handlers.saveContent?.());
-  section.append(save);
+  const actions = createElement("div", "workspace-actions");
+  actions.append(choose, save);
+  section.append(actions);
+  if (model.state.capture.mode === "recall" && !isPreparation(model.state))
+    section.append(
+      createElement(
+        "p",
+        "empty-state workspace-edit-status",
+        "Edits save to this interview. The selected prep file stays unchanged.",
+      ),
+    );
   const selected = workspace.prep.valid.find(
     (entry) => entry.basename === workspace.selectedPrep,
   );
@@ -684,15 +693,35 @@ function renderWorkspace(
         `${workspace.selectedPrepDisplayName ?? workspace.selectedPrep} — selected for this interview`,
       ),
     );
-  if (model.state.capture.mode === "recall" && !isPreparation(model.state))
-    section.append(
-      createElement(
-        "p",
-        "empty-state",
-        "Edits save to this interview. The selected prep file stays unchanged.",
-      ),
-    );
-  for (const issue of workspace.finished.errors) {
+  section.append(renderWorkspaceLifecycle(model, handlers, workspace.finished));
+  return section;
+}
+
+function renderWorkspaceFallback(
+  model: RenderModel,
+  handlers: RenderHandlers,
+): HTMLElement {
+  const section = createSection("Workspace", "workspace-prep");
+  section.classList.add("workspace-fallback");
+  section.append(
+    createElement(
+      "p",
+      "empty-state",
+      "Choose a workspace to prepare and save interviews.",
+    ),
+    renderWorkspaceLifecycle(model, handlers, null),
+  );
+  return section;
+}
+
+function renderWorkspaceLifecycle(
+  model: RenderModel,
+  handlers: RenderHandlers,
+  finishedRecords: WorkspaceOverview["finished"] | null,
+): HTMLElement {
+  const section = createElement("div", "workspace-lifecycle");
+  section.append(createElement("h3", undefined, "Saved interviews"));
+  for (const issue of finishedRecords?.errors ?? []) {
     const alert = createElement(
       "p",
       "error-message",
@@ -701,27 +730,7 @@ function renderWorkspace(
     alert.setAttribute("role", "alert");
     section.append(alert);
   }
-  if (workspace.finished.valid.length) {
-    const finished = createElement("details", "finished-records");
-    finished.append(
-      createElement(
-        "summary",
-        undefined,
-        `Finished conversations (${workspace.finished.valid.length})`,
-      ),
-    );
-    for (const record of workspace.finished.valid) {
-      const item = createElement("details");
-      item.append(
-        createElement("summary", undefined, record.name),
-        Object.assign(document.createElement("pre"), {
-          textContent: record.markdown,
-        }),
-      );
-      finished.append(item);
-    }
-    section.append(finished);
-  }
+  appendSessionLifecycle(section, model, handlers);
   return section;
 }
 
@@ -935,11 +944,11 @@ function renderMarty(
   return section;
 }
 
-function renderSessionLifecycle(
+function appendSessionLifecycle(
+  section: HTMLElement,
   model: RenderModel,
   handlers: RenderHandlers,
-): HTMLElement {
-  const section = createSection("Saved interviews", "session-lifecycle");
+): void {
   const finalization = model.state.lifecycle.finalization;
   const status = createElement("p", "finalization-status");
   status.dataset.testid = "finalization-status";
@@ -1016,22 +1025,20 @@ function renderSessionLifecycle(
 
   if (model.sessionHistory.length > 0) {
     const list = createElement("ul", "session-history");
-    for (const item of [...model.sessionHistory].reverse()) {
-      const row = createElement("li", "session-history-item");
-      row.append(
-        createElement(
-          "p",
-          "session-history-summary",
-          `${item.displayName ? `${item.displayName} — ` : ""}${formatHistoryTimestamp(
-            item.startedAt,
-          )} — ${capitalize(item.lifecycle)}`,
-        ),
-      );
-      list.append(row);
-    }
+    const latest = [...model.sessionHistory].sort(
+      (a, b) => Date.parse(b.completedAt) - Date.parse(a.completedAt),
+    )[0]!;
+    const row = createElement("li", "session-history-item");
+    row.append(
+      createElement(
+        "p",
+        "session-history-summary",
+        latest.displayName ?? "Interview",
+      ),
+    );
+    list.append(row);
     section.append(createElement("h3", undefined, "History"), list);
   }
-  return section;
 }
 
 function isSessionMutable(state: SessionState): boolean {
@@ -1051,13 +1058,6 @@ function formatMissingMilestone(
     transcript_done: "transcript ready",
     bot_done: "bot finished",
   }[milestone];
-}
-
-function formatHistoryTimestamp(timestamp: string): string {
-  return new Date(timestamp).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
 }
 
 function renderTranscript(
@@ -1080,7 +1080,10 @@ function renderTranscript(
       ? handlers.hideTranscript()
       : handlers.showTranscript(null),
   );
-  section.prepend(close);
+  const header = createElement("div", "transcript-header");
+  const heading = section.querySelector("h2")!;
+  header.append(heading, close);
+  section.prepend(header);
   const content = createElement("div");
   content.id = "transcript-content";
   content.hidden = !model.transcriptVisible;
@@ -1092,6 +1095,18 @@ function renderTranscript(
   const turns = selectedIds
     ? model.state.transcript.filter((turn) => selectedIds.has(turn.id))
     : model.state.transcript;
+
+  if (selectedIds) {
+    const filterStatus = createElement("div", "transcript-filter-status");
+    const label = createElement("p", undefined, "Filtered");
+    label.setAttribute("role", "status");
+    const clear = createElement("button", "text-button", "Clear filter");
+    clear.id = "transcript-filter-clear";
+    clear.type = "button";
+    clear.addEventListener("click", () => handlers.showTranscript(null));
+    filterStatus.append(label, clear);
+    header.append(filterStatus);
+  }
 
   if (turns.length === 0) {
     content.append(

@@ -526,3 +526,234 @@ it("rejects a new inline identity already used in another list", () => {
   ).toThrow(/identity/);
   service.close();
 });
+
+it("rejects duplicate name edits before checkpoint mutation and keeps a unique rename across restart", () => {
+  const { root, service, repository } = fixture();
+  service.selectPrep("example.md");
+  const other = structuredClone(service.getSnapshot());
+  other.sessionId = "22222222-2222-4333-8444-555555555555";
+  other.lifecycle.displayName = "Taken name";
+  publishFinishedConversation({
+    root,
+    state: other,
+    prepSourceFile: "TEMPLATE.md",
+    prepSourceBytes: bytes,
+    completedAt: "2026-09-20T14:00:00.000Z",
+  });
+  const before = service.getSnapshot();
+  const edit = (displayName: string) =>
+    service.editContent({
+      sessionId: before.sessionId,
+      revision: 0,
+      mutationId: displayName,
+      section: "metadata",
+      text: JSON.stringify({ displayName }),
+    });
+  expect(() => edit("TAKEN NAME")).toThrow(/different name/i);
+  expect(service.getSnapshot()).toEqual(before);
+  expect(repository.load()?.state).toEqual(before);
+  edit("New Café name");
+  service.saveCurrentContent({ sessionId: before.sessionId, revision: 1 });
+  service.close();
+  const resumed = createLiveSessionService({
+    repository: new FileSessionRepository(path.join(root, "private")),
+    userWorkspaceRoot: root,
+  });
+  expect(resumed.getSnapshot().lifecycle.displayName).toBe("New Café name");
+  resumed.close();
+});
+
+it("rechecks the name before Finish, retains the flush barrier, and publishes an active rename coherently", async () => {
+  const { root, repository, service } = fixture();
+  service.selectPrep("example.md");
+  service.close();
+  const capture = createLiveSessionService({
+    repository,
+    userWorkspaceRoot: root,
+    captureProvider: fakeCapture(),
+  });
+  capture.openContentEditing();
+  expect(
+    await capture.startRecallCapture({ ...meeting, displayName: "First name" }),
+  ).toMatchObject({ ok: true });
+  const rename = (displayName: string) =>
+    capture.editContent({
+      sessionId: capture.getSnapshot().sessionId,
+      revision: capture.getSnapshot().contentRevision ?? 0,
+      mutationId: displayName,
+      section: "metadata",
+      text: JSON.stringify({ displayName }),
+    });
+  rename("Final café");
+  const originalPrep = readFileSync(
+    path.join(root, "prep/current/example.md"),
+    "utf8",
+  );
+  const other = structuredClone(capture.getSnapshot());
+  other.sessionId = "33333333-2222-4333-8444-555555555555";
+  publishFinishedConversation({
+    root,
+    state: other,
+    prepSourceFile: "TEMPLATE.md",
+    prepSourceBytes: bytes,
+    completedAt: "2026-09-20T14:00:00.000Z",
+  });
+  for (const milestone of [
+    "call_ended",
+    "transcript_done",
+    "bot_done",
+  ] as const)
+    capture.ingestRecallLifecycle({
+      botId: "synthetic",
+      recordingId: "synthetic-recording",
+      status: "ended",
+      milestone,
+      occurredAt: "2026-09-20T14:00:00.000Z",
+    });
+  const flush = () => ({
+    sessionId: capture.getSnapshot().sessionId,
+    revision: capture.getSnapshot().contentRevision ?? 0,
+  });
+  expect(() => capture.retryFinalization(flush())).toThrow(/different name/i);
+  expect(capture.getSnapshot().contentFlushRequired).toBe(true);
+  rename("Available café");
+  capture.saveCurrentContent(flush());
+  expect(readFileSync(path.join(root, "prep/current/example.md"), "utf8")).toBe(
+    originalPrep,
+  );
+  capture.retryFinalization(flush());
+  expect(capture.getSnapshot().lifecycle.finalization).toMatchObject({
+    state: "complete",
+    directory: "finished-conversations/Available café",
+  });
+  expect(
+    readFileSync(path.join(root, "prep/archive/Available café.md"), "utf8"),
+  ).toBe(originalPrep);
+  expect(scanFinishedConversations(root).valid.map((r) => r.name)).toEqual([
+    "Available café",
+    "Final café",
+  ]);
+  capture.close();
+});
+
+it.each([false, true])(
+  "recovers a checkpoint after record publication before archive (legacy names: %s)",
+  async (legacyNames) => {
+    const { root, repository, service } = fixture();
+    service.selectPrep("example.md");
+    service.close();
+    const capture = createLiveSessionService({
+      repository,
+      userWorkspaceRoot: root,
+      captureProvider: fakeCapture(),
+    });
+    capture.openContentEditing();
+    await capture.startRecallCapture({
+      ...meeting,
+      displayName: "Recovery café",
+    });
+    for (const milestone of [
+      "call_ended",
+      "transcript_done",
+      "bot_done",
+    ] as const)
+      capture.ingestRecallLifecycle({
+        botId: "synthetic",
+        recordingId: "synthetic-recording",
+        status: "ended",
+        milestone,
+        occurredAt: "2026-09-20T14:00:00.000Z",
+      });
+    const state = capture.getSnapshot();
+    capture.close();
+    state.contentFlushRequired = false;
+    const completedAt = "2026-09-20T14:00:00.000Z";
+    // The finalization-start time is part of the deterministic publication bytes.
+    state.lifecycle.finalization = {
+      state: "finalizing",
+      startedAt: completedAt,
+      completedAt,
+      directory: "pending",
+    };
+    const binding = repository.getWorkspaceBinding()!;
+    const input = {
+      root,
+      state,
+      prepSourceFile: binding.prepSourceFile,
+      prepSourceBytes: binding.prepSourceBytes,
+      completedAt,
+      legacyNames,
+    };
+    expect(() =>
+      publishFinishedConversation(input, {
+        afterFinalDirectoryPublished: () => {
+          throw new Error("synthetic interruption");
+        },
+      }),
+    ).toThrow("synthetic interruption");
+    const record = scanFinishedConversations(root).valid[0]!;
+    state.lifecycle.finalization.directory = `finished-conversations/${record.name}`;
+    repository.setWorkspaceBinding({
+      ...binding,
+      finalization: {
+        completedAt,
+        directoryName: record.name,
+        archiveFileName: "old-service-pointer.json",
+        ...(legacyNames ? {} : { namingVersion: 1 as const }),
+      },
+    });
+    repository.save(state, []);
+    const restarted = createLiveSessionService({
+      repository: new FileSessionRepository(path.join(root, "private")),
+      userWorkspaceRoot: root,
+    });
+    expect(restarted.getSnapshot().lifecycle.finalization).toMatchObject({
+      state: "complete",
+      directory: `finished-conversations/${record.name}`,
+    });
+    expect(scanFinishedConversations(root).valid).toHaveLength(1);
+    if (!legacyNames)
+      expect(
+        readFileSync(path.join(root, "prep/archive/Recovery café.md"), "utf8"),
+      ).toBe(binding.prepSourceBytes);
+    expect(existsSync(path.join(root, "private/active-session.json"))).toBe(
+      false,
+    );
+    restarted.close();
+  },
+);
+
+it("rejects a duplicate capture name without a provider call or state mutation", async () => {
+  const { root, repository, service } = fixture();
+  service.selectPrep("example.md");
+  const other = structuredClone(service.getSnapshot());
+  other.sessionId = "44444444-2222-4333-8444-555555555555";
+  other.lifecycle.displayName = "Reserved name";
+  publishFinishedConversation({
+    root,
+    state: other,
+    prepSourceFile: "TEMPLATE.md",
+    prepSourceBytes: bytes,
+    completedAt: "2026-09-20T14:00:00.000Z",
+  });
+  service.close();
+  const provider = fakeCapture();
+  const capture = createLiveSessionService({
+    repository,
+    userWorkspaceRoot: root,
+    captureProvider: provider,
+  });
+  const before = capture.getSnapshot();
+  expect(
+    await capture.startRecallCapture({
+      ...meeting,
+      displayName: "RESERVED NAME",
+    }),
+  ).toMatchObject({
+    ok: false,
+    error: expect.stringMatching(/different name/i),
+  });
+  expect(provider.createBot).not.toHaveBeenCalled();
+  expect(capture.getSnapshot()).toEqual(before);
+  capture.close();
+});

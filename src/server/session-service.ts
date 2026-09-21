@@ -59,6 +59,9 @@ import type {
   SessionRepository,
 } from "./persistence/file-session-repository.js";
 import {
+  assertInterviewNameAvailable,
+  finishedConversationNames,
+  validateInterviewName,
   type InterviewPrep,
   type PrepFile,
   publishFinishedConversation,
@@ -535,11 +538,27 @@ export class SessionService {
         "A personal Microsoft Teams meeting link is required.",
       );
     }
-    const displayName = input.displayName?.trim() || null;
+    const displayName = input.displayName || null;
     if (displayName !== null && displayName.length > 80) {
       return this.#captureStartFailure(
         "invalid",
         "Interview name must be 80 characters or fewer.",
+      );
+    }
+    try {
+      this.#checkInterviewName({
+        ...this.#state,
+        lifecycle: {
+          ...this.#state.lifecycle,
+          displayName: displayName ?? this.#state.lifecycle.displayName,
+        },
+      });
+    } catch (error) {
+      return this.#captureStartFailure(
+        "invalid",
+        error instanceof Error
+          ? error.message
+          : "Choose a different interview name.",
       );
     }
     if (!this.#captureProvider) {
@@ -1076,7 +1095,9 @@ export class SessionService {
           (record) => ({
             sessionId: record.manifest.sessionId,
             startedAt: record.manifest.startedAt,
-            displayName: record.conversation.session.lifecycle.displayName,
+            completedAt: record.manifest.completedAt,
+            displayName:
+              record.conversation.session.lifecycle.displayName ?? record.name,
             lifecycle: "completed" as const,
           }),
         )
@@ -1094,6 +1115,8 @@ export class SessionService {
   }
 
   retryFinalization(flushed?: { sessionId: string; revision: number }): void {
+    if (!this.#repository?.getWorkspaceBinding?.()?.finalization)
+      this.#checkInterviewName(this.#state);
     if (this.#state.contentFlushRequired) {
       if (
         !flushed ||
@@ -1207,6 +1230,7 @@ export class SessionService {
       this.#createCurrentReference(),
       this.#createId,
     );
+    this.#checkInterviewName(next);
     const accepted: MutationReceipt = {
       mutationId: edit.mutationId,
       input,
@@ -1219,6 +1243,18 @@ export class SessionService {
     this.#state = next;
     this.#publish();
     return this.getSnapshot();
+  }
+
+  #checkInterviewName(state: SessionState): void {
+    if (state.lifecycle.displayName !== null)
+      validateInterviewName(state.lifecycle.displayName);
+    const binding = this.#repository?.getWorkspaceBinding?.();
+    if (this.#userWorkspaceRoot && binding)
+      assertInterviewNameAvailable(
+        this.#userWorkspaceRoot,
+        state,
+        binding.prepSourceFile,
+      );
   }
 
   saveCurrentContent(value: unknown): SessionState {
@@ -1237,6 +1273,7 @@ export class SessionService {
       throw new Error("Content changed before saving. Your draft was kept.");
     if (this.#state.lifecycle.finalization.state === "complete")
       return this.getSnapshot();
+    this.#checkInterviewName(this.#state);
     const capture = this.#state.capture;
     if (capture.mode === "recall" && capture.status === "creating")
       throw new Error("Capture is starting. Retry Save when it finishes.");
@@ -1386,22 +1423,23 @@ export class SessionService {
       throw new Error(
         "The active interview's originating workspace is unavailable.",
       );
-    const suffix = this.#state.sessionId.replaceAll("-", "").slice(-12);
-    const prepName =
-      binding.prepSourceFile
-        .replace(/\.json$/i, "")
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-|-$/g, "")
-        .slice(0, 48)
-        .replace(/-$/g, "") || "interview";
-    const stamp = new Date(this.#state.startedAt)
-      .toISOString()
-      .replace(
-        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}).*$/,
-        "$1-$2-$3-$4$5$6Z",
-      );
-    const directory = `finished-conversations/${stamp}-${prepName}-${suffix}`;
+    if (!binding.finalization) {
+      try {
+        this.#checkInterviewName(this.#state);
+      } catch (error) {
+        // No publication has begun: leave the name editable and retain the
+        // durable export barrier rather than freezing an unpublishable name.
+        const next = { ...this.#state, contentFlushRequired: true };
+        this.#repository.save(next, [...this.#receipts.values()]);
+        this.#state = next;
+        this.#workspaceWarning =
+          error instanceof Error
+            ? error.message
+            : "Choose a different interview name.";
+        this.#publish();
+        return;
+      }
+    }
     const startedAt =
       currentFinalization.state === "finalizing"
         ? currentFinalization.startedAt
@@ -1413,17 +1451,24 @@ export class SessionService {
       currentFinalization.state === "needs_attention"
         ? currentFinalization.completedAt
         : attemptedAt;
-    const completedStamp = new Date(completedAt)
-      .toISOString()
-      .replace(
-        /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}).*$/,
-        "$1-$2-$3-$4$5$6Z",
-      );
-    const directoryName = path.basename(directory);
-    const archiveFileName = `${completedStamp}-${prepName}-${suffix}.json`;
+    const legacyNames =
+      binding.finalization !== undefined &&
+      binding.finalization.namingVersion !== 1;
+    const { directoryName, archiveFileName } = finishedConversationNames({
+      state: this.#state,
+      prepSourceFile: binding.prepSourceFile,
+      completedAt,
+      legacyNames,
+    });
+    const directory = path.join("finished-conversations", directoryName);
     this.#repository.setWorkspaceBinding?.({
       ...binding,
-      finalization: { completedAt, directoryName, archiveFileName },
+      finalization: {
+        completedAt,
+        directoryName,
+        archiveFileName,
+        ...(legacyNames ? {} : { namingVersion: 1 as const }),
+      },
     });
     const finalizing = {
       state: "finalizing" as const,
@@ -1441,6 +1486,7 @@ export class SessionService {
     try {
       const result = publishFinishedConversation({
         root: binding.workspaceRoot,
+        legacyNames,
         state: this.getSnapshot(),
         prepSourceFile: binding.prepSourceFile,
         prepSourceBytes: binding.prepSourceBytes,
