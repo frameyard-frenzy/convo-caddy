@@ -844,6 +844,242 @@ test("malformed connection results fail closed and open diagnostics", async ({
   );
 });
 
+type SyntheticConnectionResult = {
+  recallCredentials?: Record<string, unknown>;
+  localWebhook?: Record<string, unknown>;
+  ngrokEndpoint?: Record<string, unknown>;
+  publicWebhook?: Record<string, unknown>;
+};
+const validConnectionResult = (): SyntheticConnectionResult => ({
+  recallCredentials: { state: "authenticated_read_only" },
+  localWebhook: { state: "verified_synthetic" },
+  ngrokEndpoint: { state: "verified_exact_domain" },
+  publicWebhook: { state: "verified_synthetic" },
+});
+
+for (const [name, mutate] of [
+  [
+    "missing Recall",
+    (value: SyntheticConnectionResult) => delete value.recallCredentials,
+  ],
+  [
+    "missing local callback",
+    (value: SyntheticConnectionResult) => delete value.localWebhook,
+  ],
+  [
+    "missing ngrok endpoint",
+    (value: SyntheticConnectionResult) => delete value.ngrokEndpoint,
+  ],
+  [
+    "missing public callback",
+    (value: SyntheticConnectionResult) => delete value.publicWebhook,
+  ],
+  [
+    "local success with failure diagnostic",
+    (value: SyntheticConnectionResult) => {
+      value.localWebhook!.diagnostic = { code: "local_listener_failed" };
+    },
+  ],
+  [
+    "ngrok success with failure diagnostic",
+    (value: SyntheticConnectionResult) => {
+      value.ngrokEndpoint!.diagnostic = { code: "ngrok_domain_mismatch" };
+    },
+  ],
+  [
+    "public success with failure diagnostic",
+    (value: SyntheticConnectionResult) => {
+      value.publicWebhook!.diagnostic = { code: "connection_reset" };
+    },
+  ],
+  [
+    "HTTP 204 reported as failure",
+    (value: SyntheticConnectionResult) => {
+      value.publicWebhook = {
+        state: "failed",
+        diagnostic: { code: "http_status", httpStatus: 204 },
+      };
+    },
+  ],
+  [
+    "HTTP status missing",
+    (value: SyntheticConnectionResult) => {
+      value.publicWebhook = {
+        state: "failed",
+        diagnostic: { code: "http_status" },
+      };
+    },
+  ],
+  [
+    "HTTP status string",
+    (value: SyntheticConnectionResult) => {
+      value.publicWebhook = {
+        state: "failed",
+        diagnostic: { code: "http_status", httpStatus: "302" },
+      };
+    },
+  ],
+  [
+    "HTTP status out of range",
+    (value: SyntheticConnectionResult) => {
+      value.publicWebhook = {
+        state: "failed",
+        diagnostic: { code: "http_status", httpStatus: 700 },
+      };
+    },
+  ],
+  [
+    "transport code with HTTP status",
+    (value: SyntheticConnectionResult) => {
+      value.publicWebhook = {
+        state: "failed",
+        diagnostic: { code: "connection_reset", httpStatus: 502 },
+      };
+    },
+  ],
+] as const) {
+  test(`inconsistent result fails closed: ${name}`, async ({ page, setup }) => {
+    await enterDraft(page);
+    const value = validConnectionResult();
+    mutate(value);
+    setup.setConnectionResult(value);
+    await page.locator("#test-connections").click();
+    await expect(page.locator("#recall-outcome")).toContainText(
+      "Connection checks failed",
+    );
+    await expect(page.locator("#recall-outcome")).not.toContainText("Warning");
+    await expect(page.locator("#callback-report")).toHaveValue(
+      /Overall severity: failure/,
+    );
+    await expect(page.locator("#callback-report")).toHaveValue(
+      /Result: component evidence was missing or inconsistent; whether a public callback was attempted is unknown/,
+    );
+  });
+}
+
+test("redirect and non-204 HTTP results are warnings", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  for (const httpStatus of [302, 503]) {
+    const value = validConnectionResult();
+    value.publicWebhook = {
+      state: "failed",
+      diagnostic: { code: "http_status", httpStatus },
+    } as never;
+    setup.setConnectionResult(value);
+    await page.locator("#test-connections").click();
+    await expect(page.locator("#recall-outcome")).toContainText("Warning");
+    await expect(page.locator("#callback-report")).toHaveValue(
+      new RegExp(`HTTP ${httpStatus}`),
+    );
+  }
+});
+
+test("mixed prerequisite failures dominate an attempted public failure", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setConnectionResult({
+    recallCredentials: { state: "authenticated_read_only" },
+    localWebhook: {
+      state: "failed",
+      diagnostic: { code: "local_listener_failed" },
+    },
+    ngrokEndpoint: {
+      state: "failed",
+      diagnostic: { code: "ngrok_start_failed" },
+    },
+    publicWebhook: {
+      state: "failed",
+      diagnostic: { code: "connection_reset" },
+    },
+  });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText("failed");
+  await expect(page.locator("#recall-outcome")).not.toContainText("Warning");
+  await expect(page.locator("#callback-report")).not.toHaveValue(
+    /real private Teams test call/,
+  );
+});
+
+test("disclosure and copied evidence reset on edit and held rerun", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setLocalListenerFailure(true);
+  await page.locator("#test-connections").click();
+  await page.getByRole("button", { name: "Copy diagnostic summary" }).click();
+  await expect(page.locator("#recall-details")).toHaveAttribute("open", "");
+  await page.locator("#ngrok-domain").fill("changed.ngrok.app");
+  await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
+  await expect(page.locator("#callback-report")).toHaveValue("");
+  await expect(page.locator("#copy-callback-report-status")).toHaveText("");
+
+  setup.setLocalListenerFailure(false);
+  setup.setCallbackDiagnostic({ code: "connection_reset" });
+  await page.locator("#test-connections").click();
+  await page.locator("#recall-details > summary").click();
+  const rerun = setup.hold("recall");
+  await page.locator("#test-connections").click();
+  await setup.waitFor("recall", 3);
+  await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
+  await expect(page.locator("#callback-report")).toHaveValue("");
+  await page.locator("#ngrok-domain").evaluate((element) => {
+    const input = element as HTMLInputElement;
+    input.value = "newer.ngrok.app";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  rerun.release();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "Changed — test again",
+  );
+  await expect(page.locator("#callback-report")).toHaveValue("");
+});
+
+test("request failure expands bounded diagnostics after a collapsed result", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({ code: "connection_reset" });
+  await page.locator("#test-connections").click();
+  setup.hold("recall", true).release();
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText("✕");
+  await expect(page.locator("#recall-details")).toHaveAttribute("open", "");
+  await expect(page.locator("#component-results")).toContainText(
+    "The connection test could not complete",
+  );
+  await expect(page.locator("#component-results")).not.toContainText(
+    "Synthetic adapter rejection",
+  );
+});
+
+test("warning remains advisory and complete settings can still save", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({ code: "connection_reset" });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText("Warning");
+  await page.locator("#discover-hermes-profiles").click();
+  await page.locator("#hermes-profile").selectOption("everyday");
+  await page.locator("#test-hermes-assistant").click();
+  await expect(page.locator("#assistant-outcome")).toContainText(
+    "Assistant test passed",
+  );
+  await page.locator("#save-connections").click();
+  await expect.poll(() => setup.commits).toBe(1);
+  await expect(
+    page.getByRole("heading", { name: "Fixture runtime replaced" }),
+  ).toBeVisible();
+});
+
 test("success states truthful limits and closes earlier failure details", async ({
   page,
   setup,
@@ -912,6 +1148,13 @@ test("diagnostic report rejects an unknown secret-like code", async ({
     code: "PRIVATE_TOKEN_synthetic-canary",
   } as never);
   await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toContainText(
+    "Connection checks failed",
+  );
+  await expect(page.locator("#recall-outcome")).not.toContainText("Warning");
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /Overall severity: failure/,
+  );
   await expect(page.locator("#callback-report")).toHaveValue(
     /\[connect_failed\]/,
   );
@@ -1014,10 +1257,19 @@ for (const width of [1100, 390]) {
     await enterDraft(page);
     setup.setCallbackDiagnostic({ code: "connection_reset" });
     await page.locator("#test-connections").click();
+    await page.locator("#test-connections").focus();
     for (const id of ["callback-report", "copy-callback-report"]) {
       const control = page.locator(`#${id}`);
       await control.scrollIntoViewIfNeeded();
-      await control.focus();
+      for (let presses = 0; presses < 5; presses++) {
+        if (await control.evaluate((el) => el === document.activeElement))
+          break;
+        await page.keyboard.press("Tab");
+      }
+      await expect(control).toBeFocused();
+      expect(await control.evaluate((el) => el.matches(":focus-visible"))).toBe(
+        true,
+      );
       expect(
         await control.evaluate((el) => getComputedStyle(el).outlineOffset),
       ).toBe("0px");

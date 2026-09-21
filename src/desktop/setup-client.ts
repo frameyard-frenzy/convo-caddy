@@ -34,7 +34,7 @@ function details(group, items) {
   for (const text of items) { const item = document.createElement("li"); item.textContent = text; lists[group].append(item); }
 }
 function clearCallbackReport() {
-  callbackReportPanel.hidden = true; callbackReport.value = ""; callbackReportStatus.textContent = "";
+  callbackReportPanel.hidden = true; callbackReport.value = ""; callbackReportStatus.textContent = ""; byId("recall-details").open = false;
 }
 function syncControls() {
   for (const input of inputs) input.disabled = mutationLocked;
@@ -109,7 +109,12 @@ async function run(group, progress, action, render) {
     render(value);
   } catch (error) {
     if (active === id && revision === revisions[group]) {
-      setOutcome(group, error.body?.state === "stale" ? "stale" : "failure", error.body?.state === "stale" ? "Settings changed — run again" : error.message);
+      const stale = error.body?.state === "stale";
+      setOutcome(group, stale ? "stale" : "failure", stale ? "Settings changed — run again" : error.message);
+      if (group === "recall" && !stale) {
+        details("recall", ["The connection test could not complete. Your entries remain unchanged. Retry once; if it repeats, share only this message and any allowlisted setup code."]);
+        byId("recall-details").open = true;
+      }
     }
   } finally { if (active === id) { active = null; syncControls(); } }
 }
@@ -134,6 +139,7 @@ function callbackDetail(check) {
   return Object.hasOwn(advice, diagnostic.code) ? advice[diagnostic.code] + " [" + diagnostic.code + "]" : "Failed. Review this step’s prerequisites. If seeking help, share only the step name, never credentials.";
 }
 function diagnosticToken(check) {
+  if (check.state === "unverified") return "unverified";
   if (!check.diagnostic) {
     const allowedStates = new Set(["verified_synthetic","verified_exact_domain","failed"]);
     return allowedStates.has(check.state) ? check.state : "failed [connect_failed]";
@@ -147,13 +153,17 @@ function safeDiagnosticCode(diagnostic) {
   if (diagnostic?.code === "http_status" && Number.isInteger(diagnostic.httpStatus) && diagnostic.httpStatus >= 100 && diagnostic.httpStatus <= 599) return "http_status";
   return allowed.has(diagnostic?.code) ? diagnostic.code : "connect_failed";
 }
-function callbackReportResult(value) {
+function callbackReportResult(classified) {
+  const value = classified.value;
+  if (!classified.consistent) return "Result: component evidence was missing or inconsistent; whether a public callback was attempted is unknown.";
   if (value.publicWebhook.state === "verified_synthetic") return "Result: the signed synthetic public callback reached Caddy through the temporary public tunnel.";
   const publicCode = safeDiagnosticCode(value.publicWebhook.diagnostic);
   if (publicCode === "not_attempted") return "Result: the public callback was not attempted because an earlier prerequisite failed.";
   return "Result: Caddy attempted the signed synthetic public callback through the temporary public tunnel, but the route was not verified.";
 }
-function callbackReportNextAction(value) {
+function callbackReportNextAction(classified) {
+  const value = classified.value;
+  if (!classified.consistent) return "Next action: retry once. If the result repeats, share this secret-free report for setup-result troubleshooting.";
   if (value.recallCredentials.state === "authentication_rejected") return "Next action: check that the Recall API key belongs to the US West workspace, then retry. Do not share or dump credentials.";
   if (value.recallCredentials.state !== "authenticated_read_only") return "Next action: retry when this Mac can reach the Recall API. If it repeats, check network access and Recall service availability; this result does not prove the key is wrong.";
   if (value.localWebhook.state !== "verified_synthetic") return "Next action: retry the local callback listener once. If it repeats, share this secret-free report for local listener troubleshooting.";
@@ -178,29 +188,42 @@ function callbackReportNextAction(value) {
   return actions[code] || actions.connect_failed;
 }
 const warningPublicCodes = new Set(["http_status","timeout","dns_failed","tls_certificate_failed","tls_protocol_failed","connection_refused","connection_reset","network_unreachable","connect_failed"]);
-function isWarningPublicDiagnostic(diagnostic) {
-  if (!diagnostic || !warningPublicCodes.has(diagnostic.code)) return false;
-  return diagnostic.code !== "http_status" || (Number.isInteger(diagnostic.httpStatus) && diagnostic.httpStatus >= 100 && diagnostic.httpStatus <= 599);
+const knownDiagnosticCodes = new Set([...warningPublicCodes,"not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]);
+function isConsistentDiagnostic(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== "object" || !knownDiagnosticCodes.has(diagnostic.code)) return false;
+  if (diagnostic.code === "http_status") return Number.isInteger(diagnostic.httpStatus) && diagnostic.httpStatus >= 100 && diagnostic.httpStatus <= 599 && diagnostic.httpStatus !== 204;
+  return !Object.hasOwn(diagnostic,"httpStatus");
+}
+function isConsistentCheck(check, successState, allowedFailureCodes) {
+  if (!check || typeof check !== "object") return false;
+  if (check.state === successState) return !Object.hasOwn(check,"diagnostic");
+  return check.state === "failed" && isConsistentDiagnostic(check.diagnostic) && allowedFailureCodes.has(check.diagnostic.code);
 }
 function normalizeConnectionResult(value) {
   const safe = value && typeof value === "object" ? value : {};
   const recall = safe.recallCredentials && typeof safe.recallCredentials === "object" ? safe.recallCredentials : {state:"unverified"};
-  const check = candidate => candidate && typeof candidate === "object" && typeof candidate.state === "string" ? candidate : {state:"unverified",diagnostic:{code:"connect_failed"}};
+  const check = candidate => candidate && typeof candidate === "object" && typeof candidate.state === "string" ? candidate : {state:"unverified"};
   return {recallCredentials:recall,localWebhook:check(safe.localWebhook),ngrokEndpoint:check(safe.ngrokEndpoint),publicWebhook:check(safe.publicWebhook)};
 }
 function classifyConnectionResult(raw) {
   const value = normalizeConnectionResult(raw);
+  const recallConsistent = ["authenticated_read_only","authentication_rejected","unavailable"].includes(value.recallCredentials.state) && !Object.hasOwn(value.recallCredentials,"diagnostic");
+  const localConsistent = isConsistentCheck(value.localWebhook,"verified_synthetic",new Set([...warningPublicCodes,"local_listener_failed"]));
+  const ngrokConsistent = isConsistentCheck(value.ngrokEndpoint,"verified_exact_domain",new Set(["ngrok_start_failed","ngrok_domain_mismatch","not_attempted"]));
+  const publicConsistent = isConsistentCheck(value.publicWebhook,"verified_synthetic",new Set([...warningPublicCodes,"not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]));
+  const consistent = recallConsistent && localConsistent && ngrokConsistent && publicConsistent;
   const prerequisitesPass = value.recallCredentials.state === "authenticated_read_only" && value.localWebhook.state === "verified_synthetic" && value.ngrokEndpoint.state === "verified_exact_domain";
-  if (prerequisitesPass && value.publicWebhook.state === "verified_synthetic") return {severity:"success",value};
-  const warning = prerequisitesPass && value.publicWebhook.state === "failed" && isWarningPublicDiagnostic(value.publicWebhook.diagnostic);
-  return {severity:warning ? "warning" : "failure",value};
+  if (consistent && prerequisitesPass && value.publicWebhook.state === "verified_synthetic") return {severity:"success",consistent,value};
+  const warning = consistent && prerequisitesPass && value.publicWebhook.state === "failed" && warningPublicCodes.has(value.publicWebhook.diagnostic.code);
+  return {severity:warning ? "warning" : "failure",consistent,value};
 }
-function callbackReportLimits(value) {
+function callbackReportLimits(classified) {
+  const value = classified.value;
   const base = "Limits: no bot was created; this does not prove Recall delivery, dashboard event selections, that the entered signing secret matches the Recall workspace, or provider retention.";
-  return value.ngrokEndpoint.state === "verified_exact_domain" ? base + " The temporary tunnel closes after the test, so a later offline HTTP result is not this test failing." : base;
+  return classified.consistent && value.ngrokEndpoint.state === "verified_exact_domain" ? base + " The temporary tunnel closes after the test, so a later offline HTTP result is not this test failing." : base;
 }
-function showCallbackReport(value) {
-  const severity = classifyConnectionResult(value).severity;
+function showCallbackReport(classified) {
+  const {severity,value} = classified;
   const recallStates = new Set(["authenticated_read_only","authentication_rejected","unavailable"]);
   callbackReport.value = [
     "Convo Caddy callback diagnostic",
@@ -209,10 +232,10 @@ function showCallbackReport(value) {
     "Local callback: " + diagnosticToken(value.localWebhook),
     "ngrok endpoint: " + diagnosticToken(value.ngrokEndpoint),
     "Public callback: " + diagnosticToken(value.publicWebhook),
-    callbackReportResult(value),
-    callbackReportLimits(value),
-    callbackReportNextAction(value),
-    ...(severity === "warning" ? ["Recommended next action: make one real private Teams test call before relying on this setup; admit the visible bot deliberately and verify live transcript text in Caddy."] : []),
+    callbackReportResult(classified),
+    callbackReportLimits(classified),
+    callbackReportNextAction(classified),
+    ...(severity === "warning" ? ["Recommended next action: make one real private Teams test call—alone is fine—before relying on this setup; admit the visible bot deliberately and confirm live transcript text appears in Caddy."] : []),
     "Safety: do not disable protection globally, dump credentials, or retry until green."
   ].join("\\n");
   callbackReportPanel.hidden = false;
@@ -220,11 +243,11 @@ function showCallbackReport(value) {
 byId("test-connections").addEventListener("click", () => run("recall", "Checking…", () => request("/api/setup/connections/test", {method:"POST", body:JSON.stringify(recallPayload())}), value => {
   const classified = classifyConnectionResult(value), result = classified.value;
   const failureTitle = result.recallCredentials.state === "authentication_rejected" ? "Recall authentication was rejected — check the API key and US West workspace." : result.recallCredentials.state === "unavailable" ? "Recall authentication could not be verified — retry, then check network or Recall service availability." : "Connection checks failed — review the expanded diagnostics for the first blocking step.";
-  const text = classified.severity === "success" ? "Synthetic checks passed" : classified.severity === "warning" ? "Setup not fully verified. This Mac could not verify its public callback route. Wi-Fi or ISP security filtering, DNS, a VPN/proxy, or firewall policy may block this local-origin request even when Recall delivery works; a tunnel, domain, redirect, or access-policy problem is also possible. Make one real private Teams test call before relying on setup." : failureTitle;
+  const text = classified.severity === "success" ? "Synthetic checks passed" : classified.severity === "warning" ? "Setup not fully verified. This Mac could not verify its public callback route. Local network filtering or a tunnel/domain policy problem may be responsible; this does not prove Recall delivery will fail. Make one private Teams test call—alone is fine—and confirm live transcript text appears in Caddy." : failureTitle;
   setOutcome("recall", classified.severity, text);
   byId("recall-details").open = classified.severity === "failure";
   details("recall", ["Recall credentials: " + String(result.recallCredentials.state).replaceAll("_"," "), "Local callback: " + callbackDetail(result.localWebhook), "ngrok endpoint: " + callbackDetail(result.ngrokEndpoint), "Public callback: " + callbackDetail(result.publicWebhook), "No bot was created. These synthetic checks do not verify real Recall transcript delivery, dashboard event selections, a matching workspace signing secret, or provider retention."]);
-  showCallbackReport(result);
+  showCallbackReport(classified);
 }));
 byId("copy-callback-report").addEventListener("click", async () => {
   if (callbackReportPanel.hidden || !callbackReport.value) return;

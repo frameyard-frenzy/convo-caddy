@@ -113,6 +113,7 @@ async function createFixture(
     | "authentication_rejected"
     | "unavailable" = "authenticated_read_only";
   let malformedConnectionResult = false;
+  let injectedConnectionResult: unknown = null;
   let storageFailure = false;
   let callbackDiagnostic:
     | import("../../src/server/desktop/recall-ngrok-connection-test.js").CallbackDiagnostic
@@ -374,6 +375,8 @@ async function createFixture(
         connectionTester: {
           async test(input) {
             await step("recall", input);
+            if (injectedConnectionResult !== null)
+              return structuredClone(injectedConnectionResult) as never;
             if (malformedConnectionResult)
               return {
                 generation: input.generation,
@@ -486,6 +489,9 @@ async function createFixture(
     },
     setMalformedConnectionResult(value: boolean) {
       malformedConnectionResult = value;
+    },
+    setConnectionResult(value: unknown) {
+      injectedConnectionResult = structuredClone(value);
     },
     setNgrokStartupFailure(value: boolean) {
       ngrokStartupFailure = value;

@@ -77,7 +77,11 @@ tunnel/domain/redirect/access-policy problem remains possible. The warning's
 next action is one human-operated private Teams test that admits the visible bot
 and verifies actual live transcript text. Unknown, missing, inconsistent,
 not-attempted or prerequisite-failure results remain red failures and open
-details automatically. Mixed results follow the first blocking prerequisite;
+details automatically. Success states carrying diagnostics, failure states
+without a component-appropriate diagnostic, HTTP 204 represented as failure,
+malformed HTTP statuses and transport codes carrying HTTP statuses are
+inconsistent. Their report does not claim that a public request was attempted.
+Mixed results follow the first blocking prerequisite;
 never recommend proceeding to a call while one is proven broken.
 
 For endpoint startup failure, check the authtoken, assigned domain and competing

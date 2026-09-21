@@ -16,13 +16,13 @@ Expected: the prep title, duration and Must/More Avenues prompts populate the ap
 
 ### 19a. Get a personal Teams meeting link
 
-**Interview Mac, Teams:** create and join a personal Teams meeting, then copy its meeting link (`https://teams.live.com/meet/` followed by digits).
+**Interview Mac, Teams:** create and join a private personal Teams meeting alone, then copy its meeting link (`https://teams.live.com/meet/` followed by digits). Alone is fine for this synthetic route check.
 
 Expected: you are in that meeting and have its link on the clipboard. Use no real customer data. Next: 19b.
 
 ### 19b. Authorize starting capture
 
-**Interview Mac, Caddy:** paste the link into **Personal Microsoft Teams meeting link**. Only if you authorize Recall capture and its possible provider cost/retention, click **Start live capture**.
+**Interview Mac, Caddy:** paste the link into **Personal Microsoft Teams meeting link**. Only if you authorize Recall capture and its possible provider cost/retention, click **Start live capture** once. Do not create another bot if a later stage fails.
 
 Expected: the visible **Convo Caddy** bot enters the Teams lobby. If it does not, stop acceptance and report the visible state. Next: 19c.
 
@@ -52,15 +52,15 @@ Expected: a literal note appears with no model call. Next: 20c.
 
 ### 20c. End the meeting
 
-**Interview Mac, Teams:** end the practice meeting.
+**Interview Mac, Teams:** end the practice meeting for everyone or remove the bot.
 
-Expected: the bot leaves and Caddy starts finishing the conversation. Quitting Convo Caddy does not remove a meeting bot; check Teams if it remains. Next: 20d.
+Expected: confirm the bot departs and Caddy starts finalizing the conversation. Quitting Convo Caddy does not remove a meeting bot; check Teams if it remains. Next: 20d.
 
 ### 20d. Wait for saving
 
 **Interview Mac, Caddy:** wait for the finished conversation to appear in the completed list.
 
-Expected: its four-file record and archived prep exist in the workspace. If saving reports a failure, retain the visible error and do not claim completion. Next: 20e.
+Expected: Caddy finalization completes and its four-file record and archived prep exist in the workspace. If saving reports a failure, retain the visible error and do not claim completion. Next: 20e.
 
 ### 20e. Reopen the app
 

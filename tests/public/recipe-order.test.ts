@@ -56,6 +56,17 @@ describe("novice recipe dependencies", () => {
     ]);
     expect(practice).toContain("Cancel leaves the current selection intact");
     expect(practice).toContain("Prep cannot change after capture starts");
+    for (const phrase of [
+      "private personal Teams meeting alone",
+      "Start live capture** once",
+      "end the practice meeting for everyone or remove the bot",
+      "confirm the bot departs",
+      "Caddy finalization completes",
+    ])
+      expect(practice).toContain(phrase);
+    const agents = readme.split("## For agents")[1] ?? "";
+    expect(agents).toContain("An amber warning means");
+    expect(agents).toContain("An agent must not perform or automate");
   });
   it("establishes host trust before password login and public-only enrollment", () => {
     ordered(remote, [
