@@ -209,3 +209,51 @@ it("isolated HTTP receiver enforces exact route, method, duplicate headers and b
     await closeHttpServer(server);
   }
 });
+
+it.each(["ordinary", "unsigned-bom", "malformed-utf8"] as const)(
+  "HTTP verification preserves signed body bytes: %s",
+  async (variant) => {
+    const { request } = await import("node:http");
+    const { createReceiptServer } = await import(
+      "../../src/server/desktop/recall-test-receipt.js"
+    );
+    const { listenOnLoopback, closeHttpServer } = await import(
+      "../../src/server/server-lifecycle.js"
+    );
+    const { a } = attempt();
+    const server = createReceiptServer(a);
+    const address = await listenOnLoopback(server, 0, "127.0.0.1");
+    const signedBody = signed();
+    const original = Buffer.from(signedBody.body, "utf8");
+    // Sign ordinary JSON, then change the HTTP bytes without resigning.
+    const body =
+      variant === "unsigned-bom"
+        ? Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), original])
+        : variant === "malformed-utf8"
+          ? Buffer.concat([original, Buffer.from([0xff])])
+          : original;
+    try {
+      const status = await new Promise<number>((resolve, reject) => {
+        const req = request(
+          `${address.url}/api/capture/recall/webhook`,
+          { method: "POST", headers: signedBody.headers },
+          (res) => {
+            res.resume();
+            res.on("end", () => resolve(res.statusCode ?? 0));
+          },
+        );
+        req.on("error", reject);
+        req.end(body);
+      });
+      const accepted = variant === "ordinary";
+      expect.soft(status).toBe(accepted ? 204 : 400);
+      expect.soft(a.snapshot().receipts).toBe(accepted ? 1 : 0);
+      a.fixtureSendResult({ state: "accepted", messageId: "fixture-message" });
+      expect(a.snapshot().outcome).toBe(
+        accepted ? "synthetic_attributed" : "pending",
+      );
+    } finally {
+      await closeHttpServer(server);
+    }
+  },
+);

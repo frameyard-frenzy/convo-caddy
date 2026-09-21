@@ -209,7 +209,8 @@ export function createReceiptServer(attempt: ReceiptAttempt): Server {
         }
         finish(
           attempt.receive(
-            new TextDecoder("utf-8", { fatal: true }).decode(
+            // Preserve a leading BOM as body content for HMAC verification.
+            new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
               Buffer.concat(chunks),
             ),
             headers,
