@@ -1,3 +1,6 @@
+import type { ContentEdit } from "../../src/domain/content-edit.js";
+import { renderUpdatedPrep } from "../../src/server/workspace/prep-writeback.js";
+import { parsePrep } from "../../src/server/workspace/prep-format.js";
 import { closeWindowForQuit } from "../../src/desktop/close-window.js";
 import { NavigationPolicy } from "../../src/desktop/window-security.js";
 import { startDesktopApplication } from "../../src/desktop/application.js";
@@ -2487,4 +2490,199 @@ test("unsafe saved-name whitespace is rejected without silently renaming the dra
   );
   await expect(name).toHaveText(" Café Team ");
   expect(prep.service.getSnapshot().lifecycle.displayName).toBeNull();
+});
+
+async function reuseSavedPrep(
+  page: import("@playwright/test").Page,
+  prep: { service: SessionService; root: string },
+  savedName = "Used café",
+) {
+  const workspace = path.join(prep.root, "workspace");
+  const previous = structuredClone(prep.service.getSnapshot());
+  previous.sessionId = "66666666-2222-4333-8444-555555555555";
+  previous.lifecycle.displayName = savedName;
+  const archived = publishFinishedConversation({
+    root: workspace,
+    state: previous,
+    prepSourceFile: "reused.md",
+    prepSourceBytes: renderUpdatedPrep(source, "reused.md", previous),
+    completedAt: "2026-09-20T14:00:00.000Z",
+    legacyNames: savedName.includes("/"),
+  });
+  const file = path.join(workspace, "prep/current/reused.md");
+  writeFileSync(file, readFileSync(archived.archiveFile));
+  prep.service.selectPrep("reused.md");
+  await page.reload();
+  await expect(
+    page.getByRole("textbox", {
+      name: "Saved interview name (optional)",
+      exact: true,
+    }),
+  ).toHaveText(savedName);
+  return { file, topicId: prep.service.getSnapshot().topics[0]!.id };
+}
+
+for (const scenario of [
+  "simultaneous",
+  "rejected question",
+  "rejected title",
+  "legacy invalid",
+] as const)
+  test(`reused saved prep corrects its name with mixed drafts: ${scenario}`, async ({
+    page,
+    prep,
+  }) => {
+    const savedName =
+      scenario === "legacy invalid" ? "Legacy/name" : "Used café";
+    const { file, topicId } = await reuseSavedPrep(page, prep, savedName);
+    const question = page
+      .getByRole("textbox", { name: "Prepared question text", exact: true })
+      .first();
+    const title = page.getByRole("textbox", {
+      name: "Interview title",
+      exact: true,
+    });
+    const name = page.getByRole("textbox", {
+      name: "Saved interview name (optional)",
+      exact: true,
+    });
+    const save = page.getByRole("button", { name: "Save", exact: true });
+    const edits: ContentEdit[] = [];
+    page.on("request", (request) => {
+      if (new URL(request.url()).pathname === "/api/session/content")
+        edits.push(request.postDataJSON() as ContentEdit);
+    });
+    if (scenario.startsWith("rejected")) {
+      await (scenario === "rejected title" ? title : question).fill(
+        "Draft before rejection",
+      );
+      await save.click();
+      await expect(page.getByRole("alert")).toContainText(
+        "Choose a different name",
+      );
+      expect(prep.service.getSnapshot().lifecycle.displayName).toBe(savedName);
+      await expect(scenario === "rejected title" ? title : question).toHaveText(
+        "Draft before rejection",
+      );
+      expect(edits).toHaveLength(1);
+      expect(edits[0]?.section).toBe(
+        scenario === "rejected title" ? "metadata" : "topics",
+      );
+    }
+    const acceptedStart = edits.length;
+    const questionText =
+      scenario === "rejected question"
+        ? "Draft before rejection"
+        : "Corrected question, kept with the name";
+    const titleText =
+      scenario === "rejected title"
+        ? "Draft before rejection"
+        : "Corrected title, kept with the name";
+    await question.fill(questionText);
+    await title.fill(titleText);
+    await name.fill("Available café");
+    await save.click();
+    await expect
+      .poll(() => prep.service.getSnapshot().lifecycle.displayName)
+      .toBe("Available café");
+    await expect(save).toBeEnabled();
+    await expect(page.getByRole("alert")).toHaveCount(0);
+    const saved = prep.service.getSnapshot();
+    expect(saved.topics[0]).toMatchObject({ id: topicId, text: questionText });
+    expect(saved.humanContext?.title).toBe(titleText);
+    const persisted = parsePrep(readFileSync(file, "utf8"), "reused.md");
+    expect(persisted.savedContent?.displayName).toBe("Available café");
+    expect(persisted.title).toBe(saved.humanContext?.title);
+    expect(persisted.topics[0]?.text).toBe(saved.topics[0]?.text);
+    expect(edits[acceptedStart]).toMatchObject({
+      section: "metadata",
+      text: JSON.stringify({ displayName: "Available café" }),
+    });
+    expect(new Set(edits.map((edit) => edit.mutationId)).size).toBe(
+      edits.length,
+    );
+    await expect(question).toHaveText(saved.topics[0]!.text);
+    await expect(title).toHaveText(saved.humanContext!.title);
+    expect(prep.service.getProviderCallCount()).toBe(0);
+    expect(
+      scanFinishedConversations(path.join(prep.root, "workspace")).valid,
+    ).toHaveLength(1);
+  });
+
+test("reused saved prep replays an uncertain name mutation before sending newer mixed drafts", async ({
+  page,
+  prep,
+}) => {
+  const { file, topicId } = await reuseSavedPrep(page, prep);
+  const question = page
+    .getByRole("textbox", { name: "Prepared question text", exact: true })
+    .first();
+  const title = page.getByRole("textbox", {
+    name: "Interview title",
+    exact: true,
+  });
+  const name = page.getByRole("textbox", {
+    name: "Saved interview name (optional)",
+    exact: true,
+  });
+  const save = page.getByRole("button", { name: "Save", exact: true });
+  const edits: ContentEdit[] = [];
+  const releaseEvents = prep.holdEvents();
+  await page.route("**/api/session/content", async (route) => {
+    edits.push(route.request().postDataJSON() as ContentEdit);
+    if (edits.length === 1) {
+      const response = await route.fetch();
+      expect(response.status()).toBe(200);
+      await route.abort("failed");
+    } else await route.continue();
+  });
+  try {
+    await question.fill("First question draft");
+    await title.fill("First title draft");
+    await name.fill("First available name");
+    await save.click();
+    await expect(page.getByRole("alert")).toBeVisible();
+    expect(prep.service.getSnapshot().lifecycle.displayName).toBe(
+      "First available name",
+    );
+    await question.fill("Newer question draft");
+    await title.fill("Newer title draft");
+    await name.fill("Newer available name");
+    await save.click();
+    await expect
+      .poll(() => prep.service.getSnapshot().humanContext?.title)
+      .toBe("Newer title draft");
+    await expect(save).toBeEnabled();
+    expect(edits[1]).toEqual(edits[0]);
+    expect(edits[2]).toMatchObject({
+      section: "metadata",
+      text: JSON.stringify({ displayName: "Newer available name" }),
+    });
+    expect(edits[2]?.mutationId).not.toBe(edits[0]?.mutationId);
+    releaseEvents();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () => (window as unknown as { seenRevision: number }).seenRevision,
+        ),
+      )
+      .toBe(prep.service.getSnapshot().contentRevision);
+    await expect
+      .poll(
+        () =>
+          parsePrep(readFileSync(file, "utf8"), "reused.md").savedContent
+            ?.displayName,
+      )
+      .toBe("Newer available name");
+    expect(prep.service.getSnapshot().topics[0]).toMatchObject({
+      id: topicId,
+      text: "Newer question draft",
+    });
+    await expect(name).toHaveText("Newer available name");
+    await expect(question).toHaveText("Newer question draft");
+    await expect(title).toHaveText("Newer title draft");
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  } finally {
+    releaseEvents();
+  }
 });

@@ -213,9 +213,11 @@ export class ContentEditor {
             ? r.base !== undefined
             : r.text !== (r.base ?? "") || r.conflict,
         );
+        // A reused prep can carry an unavailable name. Validate its correction
+        // before other drafts, but never replace an uncertain pending mutation.
         const field =
           this.metadata &&
-          (Object.keys(this.metadata) as Field[]).find(
+          (["displayName", "title", "plannedDurationMinutes"] as const).find(
             (k) =>
               this.metadata![k].text !== this.metadata![k].base ||
               this.metadata![k].conflict,
@@ -225,7 +227,7 @@ export class ContentEditor {
           revision: this.state.contentRevision ?? 0,
           mutationId: crypto.randomUUID(),
         };
-        if (row) {
+        if (row && field !== "displayName") {
           if (row.conflict) throw new Error(conflict);
           const text = row.deleted
             ? ""
