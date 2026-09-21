@@ -1,8 +1,10 @@
 # Recall webhook source experiment
 
-This disposable command-line experiment is **offline fixture evidence only**. It
-is not shipped setup behavior, provider feasibility proof, or live transcription
-verification. No app UI, credential storage, production webhook receiver or
+This disposable command-line experiment has an offline synthetic proof mode and
+a separately selected read-only schema discovery mode. Implemented behavior is
+**synthetically tested only** until independently reviewed and run locally by the
+operator. It is not shipped setup behavior, provider feasibility proof, or live
+transcription verification. No app UI, credential storage, production webhook receiver or
 provider settings change is included.
 
 ## Run the source proof
@@ -19,8 +21,9 @@ pnpm exec vitest run tests/desktop/recall-mcp-webhook-client.test.ts tests/deskt
 Help lists the negative scenarios. Exit 0 means only that the selected synthetic
 scenario obtained an attributed fixture receipt and completed local cleanup.
 Negative outcomes exit 2. Every report labels its evidence and says live
-transcription was not tested. Arguments are never echoed. There is no live mode,
-credential prompt, ambient credential lookup or provider send adapter.
+transcription was not tested. Arguments are never echoed. Synthetic mode has no
+credential prompt or provider transport. Neither mode has ambient credential
+lookup or a provider send adapter.
 
 The harness runs a fresh loopback listener on an OS-assigned port. It never
 attaches to another server. Discovery, send acceptance, signed callbacks and
@@ -66,9 +69,9 @@ Only the three webhook schemas (`list_webhook_endpoints`,
 `send_test_webhook_endpoint`, `list_webhook_deliveries`) are retained from
 inspection. Tool descriptions and server instructions are never executed.
 Schema objects are untrusted inspection data, not validated invocation contracts;
-no argument evaluator or tool execution is implemented. The CLI uses explicitly
-fake schemas and prints no remote schema/error/body content. A future live
-inspection path needs reviewed secure local input and sanitized schema export.
+no argument evaluator or tool execution is implemented. Synthetic mode uses fake
+schemas. Discovery mode emits only sanitized structural schemas through the
+secure local entry point described below; it never emits raw error/body content.
 Create/update/delete, credential retrieval, bots, media and inference are outside
 the tool allowlist even if a credential advertises them.
 
@@ -118,8 +121,11 @@ New seams:
   ngrok adapter through the existing exact-domain ownership manager. Only the
   owned listener/handle are closed; a failed close blocks new attempts in-process.
   Fixture endpoint mismatch prevents sending; no public self-POST is required.
-- `scripts/recall-webhook-test-experiment.ts`: help, synthetic scenario selection,
-  safe status output and signal cancellation. It accepts no live credentials.
+- `recall-schema-discovery.ts`: non-echo interactive key input, structural schema
+  sanitization and exclusive optional export. No provider tool invocation.
+- `scripts/recall-webhook-test-experiment.ts`: help, explicit synthetic/discovery
+  selection, safe status output and cancellation. Discovery alone accepts a key
+  directly from the operator’s terminal after independent source review.
 
 A maximum of 32 receipts is held in memory, with generation, non-secret settings
 fingerprint, start/deadline, event, signed ID and receipt time. Raw bodies are not
@@ -142,3 +148,93 @@ Next step is independent whole-candidate source review. Afterwards, separately
 authorized schema discovery/support clarification must resolve the above blockers
 before a reviewed live adapter or domain takeover can exist. No merge or release
 is implied by passing this source experiment.
+
+## Read-only schema discovery — operator procedure after source review
+
+Do not enter a real key until independent whole-candidate review accepts the
+exact checkout. Run this yourself in an ordinary terminal, not an agent tool,
+recorded process-input channel or chat. Prerequisites: the reviewed source
+checkout, Node 24, and its existing pinned dependencies (including tsx). This
+command does not install anything, launch the app or use Hermes configuration.
+From the repository root, for a confirmed US West workspace:
+
+```sh
+node --import tsx scripts/recall-webhook-test-experiment.ts --discover --region us-west-2 --output recall-webhook-schemas.json
+```
+
+Use the confirmed workspace region explicitly: `us-east-1`, `us-west-2`,
+`eu-central-1` or `ap-northeast-1`. No region auto-detection or alternative host is
+available. Omit `--output` to display sanitized JSON only. With `--output`, choose
+a new local filename: existing files and symlinks are never overwritten; new
+files use mode 0600 subject to the local filesystem. Do not select a shared or
+source-controlled destination. The tool does not save the key. Do not redirect
+stdin/stdout/stderr: all three must be terminals. Copy the sanitized JSON or use
+the optional file instead.
+
+In the existing Recall workspace dashboard, use **Developers → MCP API Keys**,
+**New MCP API Key**, a descriptive temporary-key name and specific permissions.
+The [official MCP documentation](https://docs.recall.ai/docs/docs-mcp) documents
+`mcp.webhooks.read` for endpoint/delivery visibility. It also says write tools
+are hidden without their scope, and associates `send_test_webhook_endpoint`
+with `mcp.webhooks.write`. Therefore a read-only scoped key may discover only two
+of the three requested definitions and report `tools_missing`. The documented
+write scope also authorizes endpoint creation/update: do not add it silently to
+make that status green. If all three definitions are needed, explicitly agree
+that broader credential capability with the coordinating human first; the CLI
+still cannot invoke any of them. Do not grant full read/write, bot, recording,
+billing, account or developer/credential scopes for this procedure. Minimum
+scope for protocol-only initialize/tools-list itself is not stated by the
+inspected docs. Missing tools or 401/403 is a reportable result, not authority to
+expand permissions or retry with unrelated keys. MCP keys are distinct from
+REST keys and are scoped to their creation workspace; workspace selection here
+is operator-confirmed, not verified by a `get_info` call. Key scopes are immutable
+per the same docs, so any replacement is a separate deliberate dashboard action.
+
+At `MCP key (hidden):`, type or paste only the temporary MCP key and press Enter.
+No characters or asterisks echo. Backspace and Ctrl-U edit the hidden input.
+Input is bounded to 4096 printable ASCII bytes and 120 seconds. Ctrl-C, Ctrl-D,
+Ctrl-Z or input EOF cancels. Network discovery takes at most five seconds plus
+one second for session cleanup. Terminal raw mode remains active without echo
+through cleanup; success/error/cancel restore its prior mode and input-flow
+state. SIGINT, SIGTERM, SIGHUP and SIGTSTP are handled as cancellation. Forced
+SIGKILL, terminal destruction and host shutdown cannot run restoration handlers.
+The owner-operated terminal/machine is trusted; this is not memory-zeroization
+or protection from another process controlled by the same owner.
+
+Only `initialize`, `notifications/initialized`, paginated `tools/list` and bounded
+HTTP session DELETE are possible. Cancellation aborts the active request, retains
+a separate cleanup bound and never reconnects. DELETE ends a protocol session;
+it does not delete a Recall resource or cancel webhook deliveries. Discovery
+never lists endpoint instances/delivery records, sends a webhook, starts a
+listener/tunnel, creates a bot or changes account settings.
+
+Output includes state, actually negotiated protocol version (null if not
+negotiated), region, cleanup and at most the three named tools. Structural
+schema filtering retains property/definition names, nested schemas, types,
+required fields, references, scalar enum/const values and common validation
+constraints. It omits prose/title/descriptions, defaults, examples, annotations
+and unsupported keywords. Object-valued literals or excessive structure fail
+closed rather than being guessed. Limits: depth 16, 4000 visited nodes, strings
+2048 characters, arrays 256 entries, final JSON 128 KiB. Exact key and session-ID
+reflections are removed from decoded retained names/strings; JSON escaping and
+ASCII serialization prevent terminal control execution, including Unicode
+format controls. No server prose is treated as instructions. References and
+patterns are inspection text only, never fetched or evaluated.
+
+Sanitization can remove important semantics or alter names that contain an exact
+secret. The output explicitly says `structure_only_not_an_invocation_contract`;
+it is not an executable or complete schema. If omitted semantics are needed,
+report the limitation for a separately reviewed clarification step. Never infer
+fields, send arguments, correlation or retry guarantees from incomplete output.
+A sanitization bound/rejection yields `sanitization_rejected` with no schemas.
+Exit 0 requires all three definitions and complete cleanup. Other results exit
+2; `tools_missing` can still contain useful sanitized definitions. No result
+proves webhook delivery, endpoint mapping or remote-delivery lifetime.
+
+Return only the sanitized JSON artifact (or displayed JSON), status/cleanup,
+region and reviewed source SHA to the coordinating reviewer. Never return the
+key, raw provider responses, headers, terminal recording or a screenshot of key
+entry. Review the sanitized structure as data. Keep the temporary key in your
+own secure store until you deliberately revoke it when discovery is finished.
+No support contact, send, endpoint takeover, product integration, merge or
+release is authorized by this command or its output.

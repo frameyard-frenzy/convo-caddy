@@ -1,4 +1,4 @@
-/** Discovery only. No tools/call, ambient credentials, default transport or live CLI. */
+/** Discovery only. No tools/call, ambient credentials, default transport or tool execution. */
 const REGIONS = ["us-east-1", "us-west-2", "eu-central-1", "ap-northeast-1"];
 const VERSION = "2025-06-18";
 const TOOL_NAMES = [
@@ -14,7 +14,10 @@ export type DiscoveredTool = {
   outputSchema?: ObjectValue;
 };
 export type DiscoveryResult = {
+  protocolVersion?: string;
   state:
+    | "sanitization_rejected"
+    | "cancelled"
     | "discovered"
     | "configuration_rejected"
     | "authentication_rejected"
@@ -40,6 +43,11 @@ export async function discoverRecallWebhookTools(options: {
   key: string;
   fetchImpl: typeof fetch;
   timeoutMs?: number;
+  signal?: AbortSignal;
+  sanitizeTools?: (
+    tools: DiscoveredTool[],
+    sensitiveValues: readonly string[],
+  ) => DiscoveredTool[];
 }): Promise<DiscoveryResult> {
   const timeoutMs = options.timeoutMs ?? 5000;
   if (
@@ -66,7 +74,10 @@ export async function discoverRecallWebhookTools(options: {
     const remaining = cleanup ? 1000 : deadline - Date.now();
     if (remaining <= 0) throw new DiscoveryError("unavailable");
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancel = () => {};
     const operation = async () => {
+      if (!cleanup && options.signal?.aborted)
+        throw new DiscoveryError("cancelled");
       const headers: Record<string, string> = {
         authorization: `Bearer ${options.key}`,
         accept: "application/json, text/event-stream",
@@ -183,6 +194,13 @@ export async function discoverRecallWebhookTools(options: {
       return await Promise.race([
         operation(),
         new Promise<never>((_resolve, reject) => {
+          cancel = () => {
+            controller.abort();
+            reject(new DiscoveryError("cancelled"));
+          };
+          if (!cleanup)
+            options.signal?.addEventListener("abort", cancel, { once: true });
+          if (!cleanup && options.signal?.aborted) cancel();
           timer = setTimeout(() => {
             controller.abort();
             reject(new DiscoveryError("unavailable"));
@@ -191,6 +209,7 @@ export async function discoverRecallWebhookTools(options: {
       ]);
     } finally {
       if (timer) clearTimeout(timer);
+      options.signal?.removeEventListener("abort", cancel);
       controller.abort();
     }
   };
@@ -252,10 +271,20 @@ export async function discoverRecallWebhookTools(options: {
           });
       }
       if (list.nextCursor === undefined) {
+        let safeTools = tools;
+        try {
+          if (options.sanitizeTools)
+            safeTools = options.sanitizeTools(tools, [
+              options.key,
+              ...(session ? [session] : []),
+            ]);
+        } catch {
+          throw new DiscoveryError("sanitization_rejected");
+        }
         result = {
           state:
             tools.length === TOOL_NAMES.length ? "discovered" : "tools_missing",
-          tools,
+          tools: safeTools,
           cleanup: "complete",
         };
         break;
@@ -285,5 +314,11 @@ export async function discoverRecallWebhookTools(options: {
       }
     }
   }
-  return result;
+  return {
+    ...result,
+    ...(!options.signal?.aborted
+      ? {}
+      : { state: "cancelled" as const, tools: [] }),
+    ...(initialized ? { protocolVersion: VERSION } : {}),
+  };
 }
