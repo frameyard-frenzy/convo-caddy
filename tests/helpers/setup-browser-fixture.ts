@@ -104,10 +104,17 @@ async function createFixture(
   >();
   const allGates: ReturnType<typeof gate>[] = [];
   const calls: { kind: Operation; input: unknown }[] = [];
+  const finished = new Map<Operation, number>();
   const values = new Map<string, string>();
   let writes = 0,
     commits = 0,
     runtimeStarts = 0;
+  let recallCredentialState:
+    | "authenticated_read_only"
+    | "authentication_rejected"
+    | "unavailable" = "authenticated_read_only";
+  let malformedConnectionResult = false;
+  let injectedConnectionResult: unknown = null;
   let storageFailure = false;
   let callbackDiagnostic:
     | import("../../src/server/desktop/recall-ngrok-connection-test.js").CallbackDiagnostic
@@ -368,39 +375,56 @@ async function createFixture(
         },
         connectionTester: {
           async test(input) {
-            await step("recall", input);
-            return {
-              generation: input.generation,
-              recallCredentials: { state: "authenticated_read_only" },
-              localWebhook: localListenerFailure
-                ? {
+            try {
+              await step("recall", input);
+              if (injectedConnectionResult !== null)
+                return structuredClone(injectedConnectionResult) as never;
+              if (malformedConnectionResult)
+                return {
+                  generation: input.generation,
+                  recallCredentials: {},
+                  localWebhook: { state: "verified_synthetic" },
+                  ngrokEndpoint: { state: "verified_exact_domain" },
+                  publicWebhook: {
                     state: "failed",
-                    diagnostic: { code: "local_listener_failed" },
-                  }
-                : { state: "verified_synthetic" },
-              ngrokEndpoint: localListenerFailure
-                ? { state: "failed", diagnostic: { code: "not_attempted" } }
-                : ngrokStartupFailure
+                    diagnostic: { code: "unknown_private_code" },
+                  },
+                } as never;
+              return {
+                generation: input.generation,
+                recallCredentials: { state: recallCredentialState },
+                localWebhook: localListenerFailure
                   ? {
                       state: "failed",
-                      diagnostic: { code: "ngrok_start_failed" },
+                      diagnostic: { code: "local_listener_failed" },
                     }
-                  : { state: "verified_exact_domain" },
-              publicWebhook:
-                localListenerFailure || ngrokStartupFailure
+                  : { state: "verified_synthetic" },
+                ngrokEndpoint: localListenerFailure
                   ? { state: "failed", diagnostic: { code: "not_attempted" } }
-                  : callbackDiagnostic
-                    ? { state: "failed", diagnostic: callbackDiagnostic }
-                    : { state: "verified_synthetic" },
-              webhookAuthenticity: { state: "verified_in_automation" },
-              botCreation: { state: "not_attempted" },
-              retention: {
-                requestedMedia: "none",
-                providerConfirmation: "not_observed",
-                accountMetadata: "unknown",
-                localManagedDays: 7,
-              },
-            };
+                  : ngrokStartupFailure
+                    ? {
+                        state: "failed",
+                        diagnostic: { code: "ngrok_start_failed" },
+                      }
+                    : { state: "verified_exact_domain" },
+                publicWebhook:
+                  localListenerFailure || ngrokStartupFailure
+                    ? { state: "failed", diagnostic: { code: "not_attempted" } }
+                    : callbackDiagnostic
+                      ? { state: "failed", diagnostic: callbackDiagnostic }
+                      : { state: "verified_synthetic" },
+                webhookAuthenticity: { state: "verified_in_automation" },
+                botCreation: { state: "not_attempted" },
+                retention: {
+                  requestedMedia: "none",
+                  providerConfirmation: "not_observed",
+                  accountMetadata: "unknown",
+                  localManagedDays: 7,
+                },
+              };
+            } finally {
+              finished.set("recall", (finished.get("recall") ?? 0) + 1);
+            }
           },
         },
         hermesConnectionTester: {
@@ -465,6 +489,15 @@ async function createFixture(
     setCallbackDiagnostic(value: typeof callbackDiagnostic) {
       callbackDiagnostic = value;
     },
+    setRecallCredentialState(value: typeof recallCredentialState) {
+      recallCredentialState = value;
+    },
+    setMalformedConnectionResult(value: boolean) {
+      malformedConnectionResult = value;
+    },
+    setConnectionResult(value: unknown) {
+      injectedConnectionResult = structuredClone(value);
+    },
     setNgrokStartupFailure(value: boolean) {
       ngrokStartupFailure = value;
     },
@@ -499,6 +532,9 @@ async function createFixture(
       await expect
         .poll(() => calls.filter((call) => call.kind === kind).length)
         .toBe(count);
+    },
+    async waitForFinished(kind: Operation, count = 1) {
+      await expect.poll(() => finished.get(kind) ?? 0).toBe(count);
     },
     async authority() {
       return storage.loadActiveAuthority();
@@ -549,7 +585,7 @@ export async function enterDraft(page: Page, hermes = true) {
 export async function checkAll(page: Page) {
   await page.locator("#test-connections").click();
   await expect(page.locator("#recall-outcome")).toContainText(
-    "Connection checks passed",
+    "Synthetic checks passed",
   );
   await page.locator("#discover-hermes-profiles").click();
   await expect(page.locator("#hermes-outcome")).toContainText("models loaded");

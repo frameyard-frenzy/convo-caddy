@@ -111,6 +111,344 @@ test("acknowledgement response loss never unlocks a page that may be reloading",
     "save may have completed",
   );
   await expect(page.locator("#recall-api-key")).toBeDisabled();
+  await expect(page.locator("#copy-setup-report")).toBeEnabled();
+  await page.locator("#copy-setup-report").focus();
+  await expect(page.locator("#copy-setup-report")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#copy-setup-report-status")).toHaveText("Copied");
+  await expect(page.locator("#setup-report")).toHaveValue(
+    /Operation: Confirm saved settings reload/,
+  );
+  await expect(page.locator("#setup-report")).toHaveValue(
+    /Settings were saved and secret drafts were erased/,
+  );
+});
+
+test("initial load failures keep edits locked but permit a keyboard copy", async ({
+  page,
+}) => {
+  await page.context().addCookies([
+    {
+      name: "convo_caddy_launch",
+      value: "setup_fixture_token_12345678901234567890123",
+      url,
+    },
+  ]);
+  await page.route("**/api/setup", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: "{" }),
+  );
+  await page.goto(url);
+  await expect(page.locator("#recall-api-key")).toBeDisabled();
+  await expect(page.locator("#copy-setup-report")).toBeEnabled();
+  await page.locator("#copy-setup-report").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#copy-setup-report-status")).toHaveText("Copied");
+  await expect(page.locator("#setup-report")).toHaveValue(
+    /Operation: Load saved setup/,
+  );
+  await expect(page.locator("#setup-report")).not.toHaveValue(
+    /fixture\.ngrok\.app|synthetic-private/,
+  );
+});
+
+test("initial load rejection exposes only a fixed secret-free diagnostic", async ({
+  page,
+}) => {
+  await page.context().addCookies([
+    {
+      name: "convo_caddy_launch",
+      value: "setup_fixture_token_12345678901234567890123",
+      url,
+    },
+  ]);
+  await page.route("**/api/setup", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { error: "synthetic-private-/Volumes/fixture.ngrok.app" },
+    }),
+  );
+  await page.goto(url);
+  await expect(page.locator("#copy-setup-report")).toBeEnabled();
+  await page.locator("#copy-setup-report").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#copy-setup-report-status")).toHaveText("Copied");
+  await expect(page.locator("#setup-report")).toHaveValue(/\[setup_unknown\]/);
+  await expect(page.locator("#setup-report")).not.toHaveValue(
+    /synthetic-private|\/Volumes\/|fixture\.ngrok\.app/,
+  );
+});
+
+test("assistant renderer and clipboard retain every actual safe failure state", async ({
+  page,
+}) => {
+  await boot(page);
+  await draft(page);
+  await selectModelAfterKeyEdit(page);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (value: string) => {
+          Object.assign(window, { copiedAssistantReport: value });
+          return Promise.resolve();
+        },
+      },
+    });
+  });
+  const states = [
+    "response_rejected",
+    "profile_not_advertised",
+    "authentication_rejected",
+    "identity_rejected",
+    "models_rejected",
+    "unavailable",
+    "ssh_failed",
+    "forwarding_unavailable",
+    "transport_unknown",
+  ];
+  for (const state of states) {
+    await page.route("**/api/setup/connections/hermes/test", (route) =>
+      route.fulfill({ json: { state } }),
+    );
+    await page.locator("#test-hermes-assistant").click();
+    await expect(page.locator("#assistant-results")).toContainText(
+      state.replaceAll("_", " "),
+    );
+    await expect(page.locator("#assistant-report")).toHaveValue(
+      new RegExp(`\\[${state}\\]`),
+    );
+    await page.locator("#copy-assistant-report").click();
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            (window as typeof window & { copiedAssistantReport?: string })
+              .copiedAssistantReport ?? "",
+        ),
+      )
+      .toMatch(new RegExp(`\\[${state}\\]`));
+    await page.unroute("**/api/setup/connections/hermes/test");
+  }
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({
+      json: { state: "unknown_synthetic-private_/Volumes/fixture.ngrok.app" },
+    }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await expect(page.locator("#assistant-report")).toHaveValue(
+    /\[unknown_failure\]/,
+  );
+  await expect(page.locator("#assistant-report")).not.toHaveValue(
+    /synthetic-private|\/Volumes\/|fixture\.ngrok\.app/,
+  );
+  await page.locator("#copy-assistant-report").click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as typeof window & { copiedAssistantReport?: string })
+            .copiedAssistantReport ?? "",
+      ),
+    )
+    .toMatch(/\[unknown_failure\]/);
+});
+
+test("model discovery immediately retires an old assistant report and feedback", async ({
+  page,
+}) => {
+  await boot(page);
+  await draft(page);
+  await selectModelAfterKeyEdit(page);
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "response_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await page.locator("#copy-assistant-report").click();
+  await expect(page.locator("#copy-assistant-report-status")).toHaveText(
+    "Copied",
+  );
+  const pending = gate();
+  await page.route(
+    "**/api/setup/connections/hermes/discover",
+    async (route) => {
+      await pending.promise;
+      await route.fulfill({
+        json: { state: "profiles_advertised", profiles: ["new"] },
+      });
+    },
+  );
+  await page.locator("#discover-hermes-profiles").click();
+  await expect(page.locator("#assistant-report-panel")).toBeHidden();
+  await expect(page.locator("#copy-assistant-report-status")).toHaveText("");
+  pending.release();
+  await expect(page.locator("#hermes-outcome")).toContainText("models loaded");
+  await expect(page.locator("#assistant-report-panel")).toBeHidden();
+});
+
+test("failed held discovery cannot revive an invalidated assistant report", async ({
+  page,
+}) => {
+  await boot(page);
+  await draft(page);
+  await selectModelAfterKeyEdit(page);
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "response_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await expect(page.locator("#assistant-report-panel")).toBeVisible();
+  const pending = gate();
+  await page.route(
+    "**/api/setup/connections/hermes/discover",
+    async (route) => {
+      await pending.promise;
+      await route.fulfill({ status: 503, json: { code: "setup_unknown" } });
+    },
+  );
+  await page.locator("#discover-hermes-profiles").click();
+  await expect(page.locator("#assistant-report-panel")).toBeHidden();
+  pending.release();
+  await expect(page.locator("#hermes-report-panel")).toBeVisible();
+  await expect(page.locator("#assistant-report-panel")).toBeHidden();
+});
+
+test("stale clipboard completions neither relabel nor copy replacement reports", async ({
+  page,
+}) => {
+  await boot(page);
+  await draft(page);
+  await selectModelAfterKeyEdit(page);
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "response_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await page.evaluate(() => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => (resolve = done));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => promise },
+    });
+    Object.assign(window, { resolveClipboard: resolve });
+  });
+  await page.locator("#copy-assistant-report").click();
+  await page.locator("#hermes-profile").selectOption("");
+  await page.evaluate(() =>
+    (
+      window as typeof window & { resolveClipboard: () => void }
+    ).resolveClipboard(),
+  );
+  await expect(page.locator("#copy-assistant-report-status")).toHaveText("");
+  await expect(page.locator("#assistant-report-panel")).toBeHidden();
+  await expect(page.locator("#copy-assistant-report")).not.toBeFocused();
+});
+
+test("stale clipboard rejection does not focus or fallback-copy a replacement", async ({
+  page,
+}) => {
+  await boot(page);
+  await draft(page);
+  await selectModelAfterKeyEdit(page);
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "response_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await page.evaluate(() => {
+    let reject!: () => void;
+    const promise = new Promise<void>((_resolve, fail) => (reject = fail));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => promise },
+    });
+    Object.assign(window, { rejectClipboard: reject });
+  });
+  await page.locator("#copy-assistant-report").click();
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "identity_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await page.evaluate(() =>
+    (
+      window as typeof window & { rejectClipboard: () => void }
+    ).rejectClipboard(),
+  );
+  await expect(page.locator("#assistant-report")).toHaveValue(
+    /\[identity_rejected\]/,
+  );
+  await expect(page.locator("#copy-assistant-report-status")).toHaveText("");
+  await expect(page.locator("#assistant-report")).not.toBeFocused();
+  await expect(page.locator("#assistant-report")).not.toHaveClass(
+    /manual-copy/,
+  );
+});
+
+test("stale clipboard success does not label a replacement report copied", async ({
+  page,
+}) => {
+  await boot(page);
+  await draft(page);
+  await selectModelAfterKeyEdit(page);
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "response_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await page.evaluate(() => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => (resolve = done));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => promise },
+    });
+    Object.assign(window, { resolveReplacementClipboard: resolve });
+  });
+  await page.locator("#copy-assistant-report").click();
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "identity_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await expect(page.locator("#assistant-report-panel")).toBeVisible();
+  await expect(page.locator("#assistant-report")).toHaveValue(
+    /\[identity_rejected\]/,
+  );
+  await page.evaluate(() =>
+    (
+      window as typeof window & { resolveReplacementClipboard: () => void }
+    ).resolveReplacementClipboard(),
+  );
+  await expect(page.locator("#assistant-report")).toHaveValue(
+    /\[identity_rejected\]/,
+  );
+  await expect(page.locator("#copy-assistant-report-status")).toHaveText("");
+  await expect(page.locator("#assistant-report")).not.toBeFocused();
+});
+
+test("reset cancel preserves every draft and performs zero DELETE requests", async ({
+  page,
+}) => {
+  await boot(page);
+  await draft(page);
+  let deletes = 0;
+  await page.route("**/api/setup/credentials", (route) => {
+    if (route.request().method() === "DELETE") deletes++;
+    return route.continue();
+  });
+  const before = await page
+    .locator("#connections input, #connections select")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => (node as HTMLInputElement | HTMLSelectElement).value),
+    );
+  page.once("dialog", (dialog) => dialog.dismiss());
+  await page.locator("#reset").click();
+  expect(
+    await page
+      .locator("#connections input, #connections select")
+      .evaluateAll((nodes) =>
+        nodes.map(
+          (node) => (node as HTMLInputElement | HTMLSelectElement).value,
+        ),
+      ),
+  ).toEqual(before);
+  expect(deletes).toBe(0);
+  await expect(page.locator("#setup-message")).toHaveText("");
 });
 
 test("successful reset returns an editable form and clears dependent evidence", async ({
@@ -299,8 +637,35 @@ test("native close handshake preserves settings drafts on cancel/save failure, t
   );
   await expect(page.locator("#recall-api-key")).toHaveValue("synthetic-recall");
   await expect(page.locator("#save-connections")).toBeEnabled();
+  await expect(page.locator("#setup-report")).toHaveValue(/Result: failed/);
   fail = false;
-  expect(await invoke("save")).toBe("ready");
+  const retry = gate();
+  await page.evaluate(() => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => (resolve = done));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => promise },
+    });
+    Object.assign(window, { resolveCloseClipboard: resolve });
+  });
+  await page.locator("#copy-setup-report").click();
+  await page.unroute("**/api/setup/connections");
+  await page.route("**/api/setup/connections", async (route) => {
+    await retry.promise;
+    await route.fulfill({ json: overview });
+  });
+  const save = invoke("save");
+  await expect(page.locator("#setup-report-panel")).toBeHidden();
+  await page.evaluate(() =>
+    (
+      window as typeof window & { resolveCloseClipboard: () => void }
+    ).resolveCloseClipboard(),
+  );
+  await expect(page.locator("#setup-report-panel")).toBeHidden();
+  await expect(page.locator("#copy-setup-report-status")).toHaveText("");
+  retry.release();
+  expect(await save).toBe("ready");
   expect(acknowledgements).toBe(0);
   expect(
     await page.evaluate(() =>

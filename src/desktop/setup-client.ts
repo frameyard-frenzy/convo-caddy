@@ -9,7 +9,7 @@ const outcomes = {recall: byId("recall-outcome"), hermes: byId("hermes-outcome")
 const lists = {recall: byId("component-results"), hermes: byId("hermes-results"), assistant: byId("assistant-results")};
 const inputs = [...document.querySelectorAll("input,select")];
 const buttons = [...document.querySelectorAll("button")];
-const callbackReportPanel = byId("callback-report-panel"), callbackReport = byId("callback-report"), callbackReportStatus = byId("copy-callback-report-status");
+const reportGroups = Object.fromEntries(["callback","hermes","assistant","setup"].map(name => [name,{panel:byId(name + "-report-panel"),field:byId(name + "-report"),status:byId("copy-" + name + "-report-status"),button:byId("copy-" + name + "-report"),revision:0}])) , callbackReport = reportGroups.callback.field;
 let initial = null, initialDraft = "", mutationLocked = true, active = null, operation = 0;
 const revisions = {recall: 0, hermes: 0, assistant: 0};
 
@@ -27,18 +27,25 @@ async function request(path, options) {
 function setOutcome(group, kind, text) {
   const node = outcomes[group];
   node.className = "outcome " + kind;
-  node.textContent = (kind === "success" ? "✓ " : kind === "failure" ? "✕ " : "") + text;
+  node.textContent = (kind === "success" ? "✓ " : kind === "warning" ? "⚠ Warning — " : kind === "failure" ? "✕ " : "") + text;
 }
 function details(group, items) {
   lists[group].replaceChildren();
   for (const text of items) { const item = document.createElement("li"); item.textContent = text; lists[group].append(item); }
 }
+function clearAgentReport(name) {
+  const report = reportGroups[name]; report.revision++; report.panel.hidden = true; report.field.value = ""; report.field.classList.remove("manual-copy"); report.status.textContent = ""; report.button.disabled = true;
+}
+function setAgentReport(name, lines) {
+  const report = reportGroups[name]; report.revision++; report.field.value = lines.join("\\n"); report.field.classList.remove("manual-copy"); report.panel.hidden = false; report.status.textContent = ""; report.button.disabled = false;
+}
 function clearCallbackReport() {
-  callbackReportPanel.hidden = true; callbackReport.value = ""; callbackReportStatus.textContent = "";
+  clearAgentReport("callback"); byId("recall-details").open = false;
 }
 function syncControls() {
   for (const input of inputs) input.disabled = mutationLocked;
   for (const button of buttons) button.disabled = mutationLocked || active !== null;
+  for (const report of Object.values(reportGroups)) report.button.disabled = report.panel.hidden || !report.field.value;
   byId("reload").hidden = initial?.mode !== "ready";
   byId("reload").disabled ||= initial?.mode !== "ready";
   byId("return-guidance").hidden = initial?.mode === "ready";
@@ -64,13 +71,17 @@ function setModels(values, selected = "") {
 }
 function resetEvidence() {
   clearCallbackReport();
-  for (const group of Object.keys(outcomes)) { revisions[group]++; setOutcome(group, "", "Not tested"); details(group, []); }
+  clearAgentReport("hermes"); clearAgentReport("assistant"); clearAgentReport("setup");
+  for (const group of Object.keys(outcomes)) { revisions[group]++; setOutcome(group, "", ""); details(group, []); }
 }
 function invalidate(group) {
+  clearAgentReport("setup");
   if (group === "recall") clearCallbackReport();
+  if (group === "hermes") { clearAgentReport("hermes"); clearAgentReport("assistant"); }
+  if (group === "assistant") clearAgentReport("assistant");
   revisions[group]++;  details(group, []);
   setOutcome(group, "stale", group === "recall" ? "Changed — test again" : group === "assistant" ? "Model changed — test assistant again" : "Changed — load models again");
-  if (group === "hermes") { setModels([]); revisions.assistant++; details("assistant", []); setOutcome("assistant", "", "Not tested"); }
+  if (group === "hermes") { setModels([]); revisions.assistant++; details("assistant", []); setOutcome("assistant", "", ""); }
 }
 function updateWebhook() { webhook.textContent = domain.value.trim() ? "https://" + domain.value.trim() + "/api/capture/recall/webhook" : "Enter a stable domain."; }
 function renderOverview(value) {
@@ -101,7 +112,7 @@ model.addEventListener("change", () => { invalidate("assistant"); syncControls()
 async function run(group, progress, action, render) {
   if (mutationLocked || active !== null) return;
   const id = ++operation, revision = revisions[group]; active = id; syncControls();
-  setOutcome(group, "progress", progress); details(group, []); if (group === "recall") clearCallbackReport();
+  setOutcome(group, "progress", progress); details(group, []); if (group === "recall") clearCallbackReport(); else clearAgentReport(group);
   try {
     const value = await action();
     if (active !== id || revision !== revisions[group]) return;
@@ -109,7 +120,13 @@ async function run(group, progress, action, render) {
     render(value);
   } catch (error) {
     if (active === id && revision === revisions[group]) {
-      setOutcome(group, error.body?.state === "stale" ? "stale" : "failure", error.body?.state === "stale" ? "Settings changed — run again" : error.message);
+      const stale = error.body?.state === "stale";
+      setOutcome(group, stale ? "stale" : "failure", stale ? "Settings changed — run again" : error.message);
+      if (!stale) showRequestFailureReport(group,error);
+      if (group === "recall" && !stale) {
+        details("recall", ["The connection test could not complete. Your entries remain unchanged. Retry once; if it repeats, share only this message and any allowlisted setup code."]);
+        byId("recall-details").open = true;
+      }
     }
   } finally { if (active === id) { active = null; syncControls(); } }
 }
@@ -117,23 +134,24 @@ function callbackDetail(check) {
   const diagnostic = check.diagnostic;
   if (!diagnostic) return check.state.replaceAll("_", " ");
   const advice = {
-    http_status: "HTTP " + diagnostic.httpStatus + " (expected 204). Check the ngrok domain routes to Caddy and has no redirect or access-policy page, then retry.",
-    timeout: "Timed out waiting for the callback. Check this Mac’s network and ngrok availability, then retry.",
-    dns_failed: "DNS lookup failed. Check this Mac’s network and DNS availability, then compare once on another trusted network.",
-    tls_certificate_failed: "TLS certificate verification failed. Check the computer clock and trusted network or managed-network policy; do not bypass certificate verification.",
-    tls_protocol_failed: "The TLS response was not valid for HTTPS. Network or ISP security filtering is one possibility, not a confirmed cause; check its security history or ask the network administrator, then compare once on another trusted network.",
-    connection_refused: "The public route refused the connection. Check ngrok status and domain ownership, then retry.",
-    connection_reset: "The public route reset the connection. Network security filtering is one possibility, not a confirmed cause; check security history or ask the network administrator, then compare once on another trusted network.",
-    network_unreachable: "The network route was unreachable. Check connectivity and compare once on another trusted network.",
-    connect_failed: "Could not connect. Check DNS, network and ngrok availability, then retry.",
-    not_attempted: "Not attempted because an earlier prerequisite failed. Resolve that step first.",
-    ngrok_start_failed: "ngrok could not start. Check its authtoken, stable domain and whether another tunnel owns that domain, then retry.",
-    ngrok_domain_mismatch: "ngrok returned a different endpoint. Check the assigned stable domain before retrying.",
-    local_listener_failed: "Caddy could not open its temporary local callback listener. Retry; if it repeats, use this code to troubleshoot local listener access.",
+    http_status: "HTTP " + diagnostic.httpStatus + "; expected 204.",
+    timeout: "Callback timed out.",
+    dns_failed: "DNS lookup failed.",
+    tls_certificate_failed: "TLS certificate verification failed.",
+    tls_protocol_failed: "Invalid HTTPS response.",
+    connection_refused: "Connection refused.",
+    connection_reset: "Connection reset.",
+    network_unreachable: "Network unreachable.",
+    connect_failed: "Connection failed.",
+    not_attempted: "Not attempted; an earlier step failed.",
+    ngrok_start_failed: "ngrok did not start.",
+    ngrok_domain_mismatch: "ngrok returned a different domain.",
+    local_listener_failed: "Local callback listener failed.",
   };
   return Object.hasOwn(advice, diagnostic.code) ? advice[diagnostic.code] + " [" + diagnostic.code + "]" : "Failed. Review this step’s prerequisites. If seeking help, share only the step name, never credentials.";
 }
 function diagnosticToken(check) {
+  if (check.state === "unverified") return "unverified";
   if (!check.diagnostic) {
     const allowedStates = new Set(["verified_synthetic","verified_exact_domain","failed"]);
     return allowedStates.has(check.state) ? check.state : "failed [connect_failed]";
@@ -147,17 +165,22 @@ function safeDiagnosticCode(diagnostic) {
   if (diagnostic?.code === "http_status" && Number.isInteger(diagnostic.httpStatus) && diagnostic.httpStatus >= 100 && diagnostic.httpStatus <= 599) return "http_status";
   return allowed.has(diagnostic?.code) ? diagnostic.code : "connect_failed";
 }
-function callbackReportResult(value) {
+function callbackReportResult(classified) {
+  const value = classified.value;
+  if (!classified.consistent) return "Result: component evidence was missing or inconsistent; whether a public callback was attempted is unknown.";
   if (value.publicWebhook.state === "verified_synthetic") return "Result: the signed synthetic public callback reached Caddy through the temporary public tunnel.";
   const publicCode = safeDiagnosticCode(value.publicWebhook.diagnostic);
   if (publicCode === "not_attempted") return "Result: the public callback was not attempted because an earlier prerequisite failed.";
   return "Result: Caddy attempted the signed synthetic public callback through the temporary public tunnel, but the route was not verified.";
 }
-function callbackReportNextAction(value) {
-  if (value.recallCredentials.state !== "authenticated_read_only") return "Next action: resolve the Recall credential result shown above before relying on the complete connection check. Do not share or dump credentials.";
+function callbackReportNextAction(classified) {
+  const value = classified.value;
+  if (!classified.consistent) return "Next action: retry once. If the result repeats, share this secret-free report for setup-result troubleshooting.";
+  if (value.recallCredentials.state === "authentication_rejected") return "Next action: check that the Recall API key belongs to the US West workspace, then retry. Do not share or dump credentials.";
+  if (value.recallCredentials.state !== "authenticated_read_only") return "Next action: retry when this Mac can reach the Recall API. If it repeats, check network access and Recall service availability; this result does not prove the key is wrong.";
   if (value.localWebhook.state !== "verified_synthetic") return "Next action: retry the local callback listener once. If it repeats, share this secret-free report for local listener troubleshooting.";
   if (value.ngrokEndpoint.state !== "verified_exact_domain") return "Next action: check the ngrok authtoken, stable domain and domain ownership. Do not stop an unfamiliar process or reset unrelated credentials.";
-  if (value.publicWebhook.state === "verified_synthetic") return "Next action: no callback recovery is needed for this synthetic check. Confirm Recall dashboard event selections separately.";
+  if (value.publicWebhook.state === "verified_synthetic") return "Next action: no callback recovery is needed for these synthetic checks. Confirm Recall dashboard event selections and the workspace signing secret separately.";
   const code = safeDiagnosticCode(value.publicWebhook.diagnostic);
   const actions = {
     http_status: "Next action: check that the actual running Caddy copy owns the ngrok domain and that no redirect or access-policy page intercepts it.",
@@ -176,48 +199,100 @@ function callbackReportNextAction(value) {
   };
   return actions[code] || actions.connect_failed;
 }
-function callbackReportLimits(value) {
-  const base = "Limits: no bot was created; this does not prove Recall delivery, dashboard event selections, or provider retention.";
-  return value.ngrokEndpoint.state === "verified_exact_domain" ? base + " The temporary tunnel closes after the test, so a later offline HTTP result is not this test failing." : base;
+const warningPublicCodes = new Set(["http_status","timeout","dns_failed","tls_certificate_failed","tls_protocol_failed","connection_refused","connection_reset","network_unreachable","connect_failed"]);
+const knownDiagnosticCodes = new Set([...warningPublicCodes,"not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]);
+function isConsistentDiagnostic(diagnostic) {
+  if (!diagnostic || typeof diagnostic !== "object" || !knownDiagnosticCodes.has(diagnostic.code)) return false;
+  if (diagnostic.code === "http_status") return Number.isInteger(diagnostic.httpStatus) && diagnostic.httpStatus >= 100 && diagnostic.httpStatus <= 599 && diagnostic.httpStatus !== 204;
+  return !Object.hasOwn(diagnostic,"httpStatus");
 }
-function showCallbackReport(value) {
-  const recallStates = new Set(["authenticated_read_only","authentication_rejected","unavailable"]);
-  callbackReport.value = [
+function isConsistentCheck(check, successState, allowedFailureCodes) {
+  if (!check || typeof check !== "object") return false;
+  if (check.state === successState) return !Object.hasOwn(check,"diagnostic");
+  return check.state === "failed" && isConsistentDiagnostic(check.diagnostic) && allowedFailureCodes.has(check.diagnostic.code);
+}
+function normalizeConnectionResult(value) {
+  const safe = value && typeof value === "object" ? value : {};
+  const unavailable = () => ({state:"unverified"});
+  const recall = safe.recallCredentials && typeof safe.recallCredentials === "object" && ["authenticated_read_only","authentication_rejected","unavailable"].includes(safe.recallCredentials.state) && !Object.hasOwn(safe.recallCredentials,"diagnostic") ? safe.recallCredentials : unavailable();
+  const check = (candidate, successState, allowedFailureCodes) => isConsistentCheck(candidate,successState,allowedFailureCodes) ? candidate : unavailable();
+  return {
+    recallCredentials:recall,
+    localWebhook:check(safe.localWebhook,"verified_synthetic",new Set([...warningPublicCodes,"local_listener_failed"])),
+    ngrokEndpoint:check(safe.ngrokEndpoint,"verified_exact_domain",new Set(["ngrok_start_failed","ngrok_domain_mismatch","not_attempted"])),
+    publicWebhook:check(safe.publicWebhook,"verified_synthetic",new Set([...warningPublicCodes,"not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]))
+  };
+}
+function classifyConnectionResult(raw) {
+  const value = normalizeConnectionResult(raw);
+  const recallConsistent = value.recallCredentials.state !== "unverified";
+  const localConsistent = isConsistentCheck(value.localWebhook,"verified_synthetic",new Set([...warningPublicCodes,"local_listener_failed"]));
+  const ngrokConsistent = isConsistentCheck(value.ngrokEndpoint,"verified_exact_domain",new Set(["ngrok_start_failed","ngrok_domain_mismatch","not_attempted"]));
+  const publicConsistent = isConsistentCheck(value.publicWebhook,"verified_synthetic",new Set([...warningPublicCodes,"not_attempted","ngrok_start_failed","ngrok_domain_mismatch","local_listener_failed"]));
+  const consistent = recallConsistent && localConsistent && ngrokConsistent && publicConsistent;
+  const prerequisitesPass = value.recallCredentials.state === "authenticated_read_only" && value.localWebhook.state === "verified_synthetic" && value.ngrokEndpoint.state === "verified_exact_domain";
+  if (consistent && prerequisitesPass && value.publicWebhook.state === "verified_synthetic") return {severity:"success",consistent,value};
+  const warning = consistent && prerequisitesPass && value.publicWebhook.state === "failed" && warningPublicCodes.has(value.publicWebhook.diagnostic.code);
+  return {severity:warning ? "warning" : "failure",consistent,value};
+}
+function callbackReportLimits(classified) {
+  const value = classified.value;
+  const base = "Limits: no bot was created; this does not prove Recall delivery, dashboard event selections, that the entered signing secret matches the Recall workspace, or provider retention.";
+  return classified.consistent && value.ngrokEndpoint.state === "verified_exact_domain" ? base + " The temporary tunnel closes after the test, so a later offline HTTP result is not this test failing." : base;
+}
+function showCallbackReport(classified) {
+  const {severity,value} = classified;
+  setAgentReport("callback",[
     "Convo Caddy callback diagnostic",
-    "Recall credentials: " + (recallStates.has(value.recallCredentials.state) ? value.recallCredentials.state : "unavailable"),
+    "Overall severity: " + severity,
+    "Recall credentials: " + value.recallCredentials.state,
     "Local callback: " + diagnosticToken(value.localWebhook),
     "ngrok endpoint: " + diagnosticToken(value.ngrokEndpoint),
     "Public callback: " + diagnosticToken(value.publicWebhook),
-    callbackReportResult(value),
-    callbackReportLimits(value),
-    callbackReportNextAction(value),
+    callbackReportResult(classified),
+    callbackReportLimits(classified),
+    callbackReportNextAction(classified),
+    ...(severity === "warning" ? ["Recommended next action: make one real private Teams test call—alone is fine—before relying on this setup; admit the visible bot deliberately and confirm live transcript text appears in Caddy."] : []),
     "Safety: do not disable protection globally, dump credentials, or retry until green."
-  ].join("\\n");
-  callbackReportPanel.hidden = false;
+  ]);
 }
 byId("test-connections").addEventListener("click", () => run("recall", "Checking…", () => request("/api/setup/connections/test", {method:"POST", body:JSON.stringify(recallPayload())}), value => {
-  const states = [value.recallCredentials.state,value.localWebhook.state,value.ngrokEndpoint.state,value.publicWebhook.state];
-  const passed = states.every(state => ["authenticated_read_only","verified_synthetic","verified_exact_domain"].includes(state));
-  const publicRouteOnly = value.recallCredentials.state === "authenticated_read_only" && value.localWebhook.state === "verified_synthetic" && value.ngrokEndpoint.state === "verified_exact_domain" && value.publicWebhook.state === "failed";
-  setOutcome("recall", passed ? "success" : "failure", passed ? "Connection checks passed" : publicRouteOnly ? "The public callback network route failed — keep the entered keys and review the route guidance below." : "Connection checks failed — open Diagnostic details below for the failed step and next action.");
-  details("recall", ["Recall credentials: " + value.recallCredentials.state.replaceAll("_"," "), "Local callback: " + callbackDetail(value.localWebhook), "ngrok endpoint: " + callbackDetail(value.ngrokEndpoint), "Public callback: " + callbackDetail(value.publicWebhook), "No bot was created; dashboard subscriptions and provider retention were not verified."]);
-  showCallbackReport(value);
+  const classified = classifyConnectionResult(value), result = classified.value;
+  const failureTitle = result.recallCredentials.state === "authentication_rejected" ? "Recall authentication was rejected — check the API key and US West workspace." : result.recallCredentials.state === "unavailable" ? "Recall authentication could not be verified — retry, then check network or Recall service availability." : "Connection checks failed — review the expanded diagnostics for the first blocking step.";
+  const text = classified.severity === "success" ? "Synthetic checks passed" : classified.severity === "warning" ? "Setup not fully verified. Make a solo Teams call and check that transcript text appears." : failureTitle;
+  setOutcome("recall", classified.severity, text);
+  byId("recall-details").open = classified.severity === "failure";
+  details("recall", ["Recall credentials: " + String(result.recallCredentials.state).replaceAll("_"," "), "Local callback: " + callbackDetail(result.localWebhook), "ngrok endpoint: " + callbackDetail(result.ngrokEndpoint), "Public callback: " + callbackDetail(result.publicWebhook), "Synthetic only: no bot or live delivery was verified."]);
+  showCallbackReport(classified);
 }));
-byId("copy-callback-report").addEventListener("click", async () => {
-  if (callbackReportPanel.hidden || !callbackReport.value) return;
+async function copyAgentReport(name) {
+  const report = reportGroups[name]; if (report.panel.hidden || !report.field.value) return;
+  const revision = report.revision, value = report.field.value;
   let copied = false;
-  try { await navigator.clipboard.writeText(callbackReport.value); copied = true; }
-  catch { callbackReport.focus(); callbackReport.select(); try { copied = document.execCommand("copy"); } catch {} }
-  callbackReportStatus.textContent = copied ? "Copied" : "Select the summary and copy it manually.";
-});
+  try { await navigator.clipboard.writeText(value); copied = true; }
+  catch { if (report.revision !== revision || report.field.value !== value || report.panel.hidden) return; report.field.classList.add("manual-copy"); report.field.focus(); report.field.select(); try { copied = document.execCommand("copy"); } catch {} if (copied) report.field.classList.remove("manual-copy"); }
+  if (report.revision !== revision || report.field.value !== value || report.panel.hidden) return;
+  report.status.textContent = copied ? "Copied" : "Press Command-C to copy the selected summary.";
+}
+for (const name of Object.keys(reportGroups)) reportGroups[name].button.addEventListener("click", () => copyAgentReport(name));
+function safeSetupCode(error) { return setupDiagnosticCodes.has(error?.body?.code) ? error.body.code : "setup_unknown"; }
+function showRequestFailureReport(group,error) {
+  const definitions = {recall:["callback","Recall and ngrok test"],hermes:["hermes","Hermes model discovery"],assistant:["assistant","Hermes assistant test"]};
+  const [name,operationName] = definitions[group];
+  setAgentReport(name,["Convo Caddy setup diagnostic","Operation: " + operationName,"Result: request_failed [" + safeSetupCode(error) + "]","Entries were retained. No raw error, credential, address, URL, transcript, or filesystem value is included.","Next action: retry once, then give this summary to your agent."]);
+}
+function safeHermesState(state, allowed) { return allowed.includes(state) ? state : "unknown_failure"; }
+function showHermesResultReport(name,operationName,state) {
+  setAgentReport(name,["Convo Caddy setup diagnostic","Operation: " + operationName,"Result: failed [" + state + "]","No raw response, credential, model content, address, host, SSH identity, or filesystem value is included.","Next action: give this summary to your agent and use the setup guide."]);
+}
 byId("discover-hermes-profiles").addEventListener("click", () => {
   if (mutationLocked || active !== null) return;
-  setModels([]); revisions.assistant++; setOutcome("assistant", "", "Not tested"); details("assistant", []);
+  clearAgentReport("assistant"); setModels([]); revisions.assistant++; setOutcome("assistant", "", ""); details("assistant", []);
   return run("hermes", "Checking connection…", () => request("/api/setup/connections/hermes/discover", {method:"POST",body:JSON.stringify(hermesPayload())}), value => {
     if (value.state === "profiles_advertised" && value.profiles.length) {
       setModels(value.profiles); setOutcome("hermes", "success", "Connected — models loaded");
       details("hermes", ["Authenticated Hermes metadata loaded. Assistant inference is a separate test."]);
-    } else { setModels([]); setOutcome("hermes", "failure", hermesFailure(value.state)); details("hermes", ["Result: " + value.state.replaceAll("_"," ")]); }
+    } else { const state = safeHermesState(value.state,["authentication_rejected","identity_rejected","models_rejected","profiles_advertised","forwarding_unavailable","ssh_failed","transport_unknown","unavailable"]); setModels([]); setOutcome("hermes", "failure", hermesFailure(state)); details("hermes", ["Result: " + state.replaceAll("_"," ")]); showHermesResultReport("hermes","Hermes model discovery",state); }
   });
 });
 byId("test-hermes-assistant").addEventListener("click", () => run("assistant", "Testing assistant…", () => {
@@ -226,7 +301,9 @@ byId("test-hermes-assistant").addEventListener("click", () => run("assistant", "
 }, value => {
   const passed = value.state === "assistant_verified_synthetic";
   setOutcome("assistant", passed ? "success" : "failure", passed ? "Assistant test passed" : "Assistant test failed — check the selected model and Hermes provider configuration before retrying.");
-  details("assistant", ["Result: " + value.state.replaceAll("_"," ")]);
+  const state = passed ? "assistant_verified_synthetic" : safeHermesState(value.state,["response_rejected","profile_not_advertised","authentication_rejected","identity_rejected","models_rejected","unavailable","ssh_failed","forwarding_unavailable","transport_unknown"]);
+  details("assistant", ["Result: " + state.replaceAll("_"," ")]);
+  if (!passed) showHermesResultReport("assistant","Hermes assistant test",state);
 }));
 
 function hermesFailure(state) {
@@ -241,6 +318,13 @@ function hermesFailure(state) {
     unavailable: "Hermes unreachable or timed out — verify both Macs are online and awake, the private network, and the host’s loopback API port. Then load models again."
   })[state] || "Unknown connection failure — verify the address and host configuration, then load models again.";
 }
+function showSetupFailureReport(operationName,error,uncertain = false,disposition = "The unsaved draft was retained.") {
+  setAgentReport("setup",["Convo Caddy setup diagnostic","Operation: " + operationName,"Result: " + (uncertain ? "response_unconfirmed" : "failed") + " [" + safeSetupCode(error) + "]",disposition + " No raw error, credential, address, URL, transcript, filesystem, user, host, or SSH value is included.","Next action: give this summary to your agent before resetting credentials."]);
+}
+function showSetupStatusReport(operationName,result,disposition,nextAction) {
+  setAgentReport("setup",["Convo Caddy setup diagnostic","Operation: " + operationName,"Result: " + result,disposition + " No raw error, credential, address, URL, transcript, filesystem, user, host, or SSH value is included.","Next action: " + nextAction]);
+}
+function isResponseUnconfirmed(error) { return error.message.startsWith("No response") || error.message.startsWith("The setup response"); }
 
 function beginMutation() {
   if (mutationLocked || active !== null) return false;
@@ -250,9 +334,10 @@ async function acknowledgeSaved() {
   try {
     await request("/api/setup/save-acknowledgement", {method:"POST",body:"{}"});
     message.textContent = "Settings saved. Reloading Convo Caddy… If this page remains, quit and reopen Convo Caddy.";
-  } catch {
+  } catch (error) {
     // Delivery may have succeeded. Never unlock a document whose teardown may be queued.
     message.textContent = "Settings saved. Reload confirmation was not received. Quit and reopen Convo Caddy; editing stays locked to protect your saved settings.";
+    showSetupFailureReport("Confirm saved settings reload",error,true,"Settings were saved and secret drafts were erased; editing remains locked because reload delivery is uncertain.");
   }
 }
 let closeApproved = false, closePreviousLock = false;
@@ -260,9 +345,10 @@ let closeApproved = false, closePreviousLock = false;
 // through a lost reply: runtime navigation may already be queued. A known
 // refusal revokes it and restores the untouched draft; a new document resets it.
 let backApproved = false;
-function refuseBack(text) {
+function refuseBack(text,error) {
   if (closeApproved) return;
   backApproved = false; message.textContent = text;
+  showSetupFailureReport("Return to app",error,false,"The unsaved draft was retained and navigation was refused.");
   mutationLocked = false; syncControls();
 }
 const hasCloseDraft = () => initial !== null && JSON.stringify(inputs.map(input => input.value)) !== initialDraft;
@@ -281,22 +367,25 @@ window.caddyPrepareClose = async action => {
   const previousLock = mutationLocked;
   if (action === "save") {
     if (!beginMutation()) return "blocked";
+    clearAgentReport("setup");
     try {
       const value = await request("/api/setup/connections", {method:"PUT",body:JSON.stringify(savePayload())});
       renderOverview(value); eraseDraft(); resetEvidence();
       message.textContent = "Settings saved.";
-    } catch (error) { message.textContent = error.message; mutationLocked = false; syncControls(); return "blocked"; }
+    } catch (error) { const uncertain = isResponseUnconfirmed(error); message.textContent = error.message; showSetupFailureReport("Save settings",error,uncertain,uncertain ? "Settings may have been saved. The local unsaved draft remains." : "The unsaved draft was retained."); mutationLocked = false; syncControls(); return "blocked"; }
   }
   closePreviousLock = previousLock; closeApproved = true; mutationLocked = true; syncControls(); return "ready";
 };
 window.addEventListener("beforeunload", event => {if (!closeApproved && !backApproved && hasCloseDraft()) event.preventDefault();});
 form.addEventListener("submit", async event => {
   event.preventDefault(); if (!beginMutation()) return;
+  clearAgentReport("setup");
   message.textContent = "Saving securely…";
   let value;
   try { value = await request("/api/setup/connections", {method:"PUT",body:JSON.stringify(savePayload())}); }
   catch (error) {
-    message.textContent = error.message + (error.message.startsWith("No response") || error.message.startsWith("The setup response") ? " The save may have completed; retrying is safe." : "");
+    message.textContent = error.message + (isResponseUnconfirmed(error) ? " The save may have completed; retrying is safe." : "");
+    showSetupFailureReport("Save settings",error,isResponseUnconfirmed(error));
     mutationLocked = false; syncControls(); return;
   }
   renderOverview(value); eraseDraft(); resetEvidence();
@@ -305,18 +394,20 @@ form.addEventListener("submit", async event => {
 });
 byId("reset").addEventListener("click", async () => {
   if (mutationLocked || active !== null || !confirm("Remove saved Convo Caddy credentials? Unsaved entries remain if reset fails.") || !beginMutation()) return;
+  clearAgentReport("setup");
   try { const value = await request("/api/setup/credentials", {method:"DELETE",body:JSON.stringify({confirm:true})}); resetEvidence(); eraseDraft(); renderOverview(value); message.textContent = "Saved credentials removed."; }
-  catch (error) { message.textContent = error.message; }
+  catch (error) { const uncertain = isResponseUnconfirmed(error); message.textContent = error.message; showSetupFailureReport("Reset credentials",error,uncertain,uncertain ? "Saved credentials may have been removed. The local unsaved draft remains." : "The unsaved draft was retained."); }
   finally { mutationLocked = false; syncControls(); }
 });
 byId("reload").addEventListener("click", async () => {
   if (mutationLocked || active !== null || initial?.mode !== "ready") return;
   const hasChanges = JSON.stringify(inputs.map(input => input.value)) !== initialDraft;
   if ((hasChanges && !confirm("Leave settings and discard unsaved changes?")) || !beginMutation()) return;
+  clearAgentReport("setup");
   backApproved = true;
   try { await request("/api/setup/reload", {method:"POST",body:"{}"}); }
   catch (error) {
-    if (error.body) { refuseBack(error.message); return; }
+    if (error.body) { refuseBack(error.message,error); return; }
     // A lost POST reply is not a refusal. Reconcile read-only without issuing
     // another mutation or revoking an already approved navigation.
   }
@@ -328,14 +419,15 @@ byId("reload").addEventListener("click", async () => {
     try {
       const result = await request("/api/setup/reload", {signal: AbortSignal.timeout(Math.max(1, Math.min(1000, deadline - Date.now())))});
       if (closeApproved) return;
-      if (result.state === "blocked") {refuseBack("Could not return to the app. Your entries are still here; try again when the current operation finishes.");return;}
+      if (result.state === "blocked") {refuseBack("Could not return to the app. Your entries are still here; try again when the current operation finishes.",{body:{code:"setup_unknown"}});return;}
       if (result.state === "reloaded") return;
     } catch { /* Read-only reconciliation can retry after a lost or unreadable status. */ }
   }
   if (closeApproved) return;
   message.textContent = "Return could not be confirmed. Your entries are still here; editing stays locked while return is uncertain. Quit and reopen when ready to leave settings.";
+  showSetupStatusReport("Confirm return to app","response_unconfirmed [setup_unknown]","The unsaved draft remains in this locked page while navigation is uncertain.","give this summary to your agent, then quit and reopen Convo Caddy when ready.");
 });
 // Quit and Back grant only document-local, explicitly approved unload authority.
 syncControls();
-request("/api/setup").then(value => { renderOverview(value); mutationLocked = false; syncControls(); }).catch(() => { message.textContent = "Saved setup could not be loaded. Quit and reopen Convo Caddy; no draft has been changed."; });
+request("/api/setup").then(value => { renderOverview(value); mutationLocked = false; syncControls(); }).catch(error => { message.textContent = "Saved setup could not be loaded. Quit and reopen Convo Caddy; no draft has been changed."; showSetupFailureReport("Load saved setup",error,false,"No setup values were loaded and editing remains locked."); syncControls(); });
 `;

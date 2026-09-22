@@ -18,8 +18,9 @@ for (const width of [1280, 900, 390])
     await expect(page.locator("#reload")).toBeDisabled();
     await expect(page.locator("#reset")).toHaveCSS(
       "background-color",
-      "rgb(196, 43, 37)",
+      "rgba(0, 0, 0, 0)",
     );
+    await expect(page.locator("#reset")).toHaveCSS("color", "rgb(169, 34, 30)");
     await page.locator("#recall-api-key").focus();
     await expect(page.locator("#recall-api-key")).toHaveCSS(
       "outline-offset",
@@ -29,11 +30,69 @@ for (const width of [1280, 900, 390])
       path: `${evidence}/after-settings-${width}.png`,
       fullPage: true,
     });
+    if (width === 1280 || width === 390) {
+      await page.locator("#reset").scrollIntoViewIfNeeded();
+      await page.locator("#reset").focus();
+      await expect(page.locator("#reset")).toBeFocused();
+      await expect(page.locator("#save-connections")).toBeVisible();
+      await expect(page.locator("#reset")).toBeVisible();
+      await page.screenshot({
+        path: `${evidence}/save-reset-context-${width}.png`,
+      });
+      await page.screenshot({
+        path: `${evidence}/save-reset-full-${width}.png`,
+        fullPage: true,
+      });
+    }
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
+  });
+
+for (const width of [1100, 390])
+  test(`Save, diagnostic copy and Reset share a compact focused viewport at ${width}`, async ({
+    page,
+    setup,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    void setup;
+    await page.route("**/api/setup/connections", (route) =>
+      route.fulfill({
+        status: 503,
+        json: { code: "settings_storage_unavailable" },
+      }),
+    );
+    await page.locator("#ngrok-domain").fill("fixture.ngrok.app");
+    await page.locator("#recall-api-key").fill("synthetic-recall");
+    await page
+      .locator("#recall-webhook-verification-secret")
+      .fill("whsec_c3ludGhldGlj");
+    await page.locator("#ngrok-authtoken").fill("synthetic-ngrok");
+    await page.locator("#save-connections").click();
+    await expect(page.locator("#setup-report-panel")).toBeVisible();
+    await page.locator("#save-connections").focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#copy-setup-report")).toBeFocused();
+    await page.locator("#reset").scrollIntoViewIfNeeded();
+    for (const id of ["save-connections", "copy-setup-report", "reset"])
+      await expect(page.locator(`#${id}`)).toBeVisible();
+    await page.locator("#save-connections").focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#copy-setup-report")).toBeFocused();
+    await page.screenshot({
+      path: `${evidence}/save-copy-reset-context-${width}.png`,
+    });
+    await page.screenshot({
+      path: `${evidence}/save-copy-reset-full-${width}.png`,
+      fullPage: true,
+    });
+    await page.locator("#reset").focus();
+    await expect(page.locator("#reset")).toBeFocused();
+    await page.screenshot({
+      path: `${evidence}/save-copy-reset-reset-focus-${width}.png`,
+    });
   });
 
 test.describe("Back through actual saved setup routes", () => {
@@ -92,6 +151,18 @@ test.describe("Back through actual saved setup routes", () => {
         if (reply === "refused") {
           await expect(page.locator("#setup-message")).toContainText(
             "Synthetic refusal",
+          );
+          await expect(page.locator("#copy-setup-report")).toBeEnabled();
+          await expect(page.locator("#setup-report")).toHaveValue(
+            /Operation: Return to app/,
+          );
+          await page.locator("#copy-setup-report").focus();
+          await page.keyboard.press("Enter");
+          await expect(page.locator("#copy-setup-report-status")).toHaveText(
+            "Copied",
+          );
+          await expect(page.locator("#setup-report")).not.toHaveValue(
+            /Synthetic refusal|draft\.ngrok\.app/,
           );
         } else {
           await setup.waitFor("reload");
@@ -190,6 +261,70 @@ test.describe("Back through actual saved setup routes", () => {
     ).toBeVisible();
   });
 
+  for (const settlement of ["resolve", "reject"] as const)
+    test(`Back retry retires a refused report before stale clipboard ${settlement}`, async ({
+      page,
+      setup,
+    }) => {
+      let posts = 0;
+      await page.route("**/api/setup/reload", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        posts++;
+        if (posts === 1)
+          return route.fulfill({
+            status: 409,
+            json: { error: "Synthetic refusal" },
+          });
+        return route.continue();
+      });
+      await page.locator("#ngrok-domain").fill("draft.ngrok.app");
+      page.once("dialog", (dialog) => dialog.accept());
+      await page.locator("#reload").click();
+      await expect(page.locator("#setup-report-panel")).toBeVisible();
+      await page.locator("#copy-setup-report").click();
+      await expect(page.locator("#copy-setup-report-status")).toHaveText(
+        "Copied",
+      );
+
+      page.once("dialog", (dialog) => dialog.dismiss());
+      await page.locator("#reload").click();
+      await expect(page.locator("#setup-report-panel")).toBeVisible();
+      await expect(page.locator("#copy-setup-report-status")).toHaveText(
+        "Copied",
+      );
+
+      await page.evaluate((settlement) => {
+        let settle!: () => void;
+        const promise = new Promise<void>((resolve, reject) => {
+          settle = settlement === "resolve" ? resolve : reject;
+        });
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: { writeText: () => promise },
+        });
+        Object.assign(window, { settleBackClipboard: settle });
+      }, settlement);
+      await page.locator("#copy-setup-report").click();
+      const retry = setup.hold("reload");
+      page.once("dialog", (dialog) => dialog.accept());
+      await page.locator("#reload").click();
+      await setup.waitFor("reload");
+      await expect(page.locator("#setup-report-panel")).toBeHidden();
+      await expect(page.locator("#copy-setup-report-status")).toHaveText("");
+      await page.evaluate(() =>
+        (
+          window as typeof window & { settleBackClipboard: () => void }
+        ).settleBackClipboard(),
+      );
+      await expect(page.locator("#setup-report-panel")).toBeHidden();
+      await expect(page.locator("#copy-setup-report-status")).toHaveText("");
+      await expect(page.locator("#setup-report")).not.toBeFocused();
+      await expect(page.locator("#setup-report")).not.toHaveClass(
+        /manual-copy/,
+      );
+      retry.release();
+    });
+
   for (const failure of ["network", "json"])
     test(`lost Back status ${failure} reconciles later runtime refusal`, async ({
       page,
@@ -266,6 +401,15 @@ test.describe("Back through actual saved setup routes", () => {
       await expect(
         page.getByRole("button", { name: "Save", exact: true }),
       ).toBeDisabled();
+      await expect(page.locator("#copy-setup-report")).toBeEnabled();
+      await page.locator("#copy-setup-report").focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator("#copy-setup-report-status")).toHaveText(
+        "Copied",
+      );
+      await expect(page.locator("#setup-report")).toHaveValue(
+        /Operation: Confirm return to app/,
+      );
       await expect(page.locator("#ngrok-domain")).toHaveValue(
         "draft.ngrok.app",
       );
