@@ -324,6 +324,7 @@ function showSetupFailureReport(operationName,error,uncertain = false,dispositio
 function showSetupStatusReport(operationName,result,disposition,nextAction) {
   setAgentReport("setup",["Convo Caddy setup diagnostic","Operation: " + operationName,"Result: " + result,disposition + " No raw error, credential, address, URL, transcript, filesystem, user, host, or SSH value is included.","Next action: " + nextAction]);
 }
+function isResponseUnconfirmed(error) { return error.message.startsWith("No response") || error.message.startsWith("The setup response"); }
 
 function beginMutation() {
   if (mutationLocked || active !== null) return false;
@@ -366,11 +367,12 @@ window.caddyPrepareClose = async action => {
   const previousLock = mutationLocked;
   if (action === "save") {
     if (!beginMutation()) return "blocked";
+    clearAgentReport("setup");
     try {
       const value = await request("/api/setup/connections", {method:"PUT",body:JSON.stringify(savePayload())});
       renderOverview(value); eraseDraft(); resetEvidence();
       message.textContent = "Settings saved.";
-    } catch (error) { message.textContent = error.message; showSetupFailureReport("Save settings",error); mutationLocked = false; syncControls(); return "blocked"; }
+    } catch (error) { const uncertain = isResponseUnconfirmed(error); message.textContent = error.message; showSetupFailureReport("Save settings",error,uncertain,uncertain ? "Settings may have been saved. The local unsaved draft remains." : "The unsaved draft was retained."); mutationLocked = false; syncControls(); return "blocked"; }
   }
   closePreviousLock = previousLock; closeApproved = true; mutationLocked = true; syncControls(); return "ready";
 };
@@ -382,8 +384,8 @@ form.addEventListener("submit", async event => {
   let value;
   try { value = await request("/api/setup/connections", {method:"PUT",body:JSON.stringify(savePayload())}); }
   catch (error) {
-    message.textContent = error.message + (error.message.startsWith("No response") || error.message.startsWith("The setup response") ? " The save may have completed; retrying is safe." : "");
-    showSetupFailureReport("Save settings",error,error.message.startsWith("No response") || error.message.startsWith("The setup response"));
+    message.textContent = error.message + (isResponseUnconfirmed(error) ? " The save may have completed; retrying is safe." : "");
+    showSetupFailureReport("Save settings",error,isResponseUnconfirmed(error));
     mutationLocked = false; syncControls(); return;
   }
   renderOverview(value); eraseDraft(); resetEvidence();
@@ -394,13 +396,14 @@ byId("reset").addEventListener("click", async () => {
   if (mutationLocked || active !== null || !confirm("Remove saved Convo Caddy credentials? Unsaved entries remain if reset fails.") || !beginMutation()) return;
   clearAgentReport("setup");
   try { const value = await request("/api/setup/credentials", {method:"DELETE",body:JSON.stringify({confirm:true})}); resetEvidence(); eraseDraft(); renderOverview(value); message.textContent = "Saved credentials removed."; }
-  catch (error) { message.textContent = error.message; showSetupFailureReport("Reset credentials",error); }
+  catch (error) { const uncertain = isResponseUnconfirmed(error); message.textContent = error.message; showSetupFailureReport("Reset credentials",error,uncertain,uncertain ? "Saved credentials may have been removed. The local unsaved draft remains." : "The unsaved draft was retained."); }
   finally { mutationLocked = false; syncControls(); }
 });
 byId("reload").addEventListener("click", async () => {
   if (mutationLocked || active !== null || initial?.mode !== "ready") return;
   const hasChanges = JSON.stringify(inputs.map(input => input.value)) !== initialDraft;
   if ((hasChanges && !confirm("Leave settings and discard unsaved changes?")) || !beginMutation()) return;
+  clearAgentReport("setup");
   backApproved = true;
   try { await request("/api/setup/reload", {method:"POST",body:"{}"}); }
   catch (error) {

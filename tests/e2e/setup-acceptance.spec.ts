@@ -167,6 +167,105 @@ test("lost Save response follows a real committed generation, retains all canari
   expect(setup.calls.filter((call) => call.kind === "reload")).toHaveLength(1);
 });
 
+test.describe("uncertain setup mutations use actual storage results", () => {
+  test.describe("Reset response loss", () => {
+    test.use({ readySetup: true });
+    for (const responseLoss of ["network", "json"] as const) {
+      test(`lost ${responseLoss} reply reports unconfirmed after actual removal`, async ({
+        page,
+        setup,
+      }) => {
+        await enterDraft(page, false);
+        const drafts: Record<string, string> = Object.fromEntries(
+          await Promise.all(
+            Object.keys(canaries).map(async (id) => [
+              id,
+              await page.locator(`#${id}`).inputValue(),
+            ]),
+          ),
+        );
+        await page.route(
+          "**/api/setup/credentials",
+          async (route) => {
+            const response = await route.fetch();
+            expect(response.status()).toBe(200);
+            expect(await setup.authority()).toBeNull();
+            if (responseLoss === "network")
+              await route.abort("connectionreset");
+            else
+              await route.fulfill({
+                status: 200,
+                contentType: "application/json",
+                body: "{",
+              });
+          },
+          { times: 1 },
+        );
+        page.once("dialog", (dialog) => dialog.accept());
+        await page.locator("#reset").click();
+        await expect(page.locator("#setup-report")).toHaveValue(
+          /Result: response_unconfirmed/,
+        );
+        await expect(page.locator("#setup-report")).toHaveValue(
+          /credentials may have been removed/i,
+        );
+        expect(
+          setup.calls.filter((call) => call.kind === "reset"),
+        ).toHaveLength(1);
+        expect(await setup.authority()).toBeNull();
+        for (const [id, value] of Object.entries(drafts))
+          await expect(page.locator(`#${id}`)).toHaveValue(value);
+      });
+    }
+  });
+
+  for (const responseLoss of ["network", "json"] as const) {
+    test(`native-close Save lost ${responseLoss} reply is unconfirmed after actual commit`, async ({
+      page,
+      setup,
+    }) => {
+      await enterDraft(page, false);
+      await page.route(
+        "**/api/setup/connections",
+        async (route) => {
+          const response = await route.fetch();
+          expect(response.status()).toBe(200);
+          expect(setup.commits).toBe(1);
+          if (responseLoss === "network") await route.abort("connectionreset");
+          else
+            await route.fulfill({
+              status: 200,
+              contentType: "application/json",
+              body: "{",
+            });
+        },
+        { times: 1 },
+      );
+      const result = await page.evaluate(() =>
+        (
+          window as unknown as {
+            caddyPrepareClose(action: string): Promise<string>;
+          }
+        ).caddyPrepareClose("save"),
+      );
+      expect(result).toBe("blocked");
+      expect(setup.commits).toBe(1);
+      expect((await setup.authority())?.secrets).toMatchObject({
+        "recall-api-key": canaries["recall-api-key"],
+      });
+      await expect(page.locator("#setup-report")).toHaveValue(
+        /Result: response_unconfirmed/,
+      );
+      await expect(page.locator("#setup-report")).toHaveValue(
+        /settings may have been saved/i,
+      );
+      await expect(page.locator("#recall-api-key")).toHaveValue(
+        canaries["recall-api-key"],
+      );
+    });
+  }
+});
+
 for (const kind of ["recall", "discovery", "assistant"] as const) {
   for (const rejection of [false, true]) {
     for (const change of ["edit"] as const) {

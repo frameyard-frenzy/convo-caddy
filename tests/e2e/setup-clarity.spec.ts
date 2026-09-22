@@ -261,6 +261,70 @@ test.describe("Back through actual saved setup routes", () => {
     ).toBeVisible();
   });
 
+  for (const settlement of ["resolve", "reject"] as const)
+    test(`Back retry retires a refused report before stale clipboard ${settlement}`, async ({
+      page,
+      setup,
+    }) => {
+      let posts = 0;
+      await page.route("**/api/setup/reload", async (route) => {
+        if (route.request().method() !== "POST") return route.continue();
+        posts++;
+        if (posts === 1)
+          return route.fulfill({
+            status: 409,
+            json: { error: "Synthetic refusal" },
+          });
+        return route.continue();
+      });
+      await page.locator("#ngrok-domain").fill("draft.ngrok.app");
+      page.once("dialog", (dialog) => dialog.accept());
+      await page.locator("#reload").click();
+      await expect(page.locator("#setup-report-panel")).toBeVisible();
+      await page.locator("#copy-setup-report").click();
+      await expect(page.locator("#copy-setup-report-status")).toHaveText(
+        "Copied",
+      );
+
+      page.once("dialog", (dialog) => dialog.dismiss());
+      await page.locator("#reload").click();
+      await expect(page.locator("#setup-report-panel")).toBeVisible();
+      await expect(page.locator("#copy-setup-report-status")).toHaveText(
+        "Copied",
+      );
+
+      await page.evaluate((settlement) => {
+        let settle!: () => void;
+        const promise = new Promise<void>((resolve, reject) => {
+          settle = settlement === "resolve" ? resolve : reject;
+        });
+        Object.defineProperty(navigator, "clipboard", {
+          configurable: true,
+          value: { writeText: () => promise },
+        });
+        Object.assign(window, { settleBackClipboard: settle });
+      }, settlement);
+      await page.locator("#copy-setup-report").click();
+      const retry = setup.hold("reload");
+      page.once("dialog", (dialog) => dialog.accept());
+      await page.locator("#reload").click();
+      await setup.waitFor("reload");
+      await expect(page.locator("#setup-report-panel")).toBeHidden();
+      await expect(page.locator("#copy-setup-report-status")).toHaveText("");
+      await page.evaluate(() =>
+        (
+          window as typeof window & { settleBackClipboard: () => void }
+        ).settleBackClipboard(),
+      );
+      await expect(page.locator("#setup-report-panel")).toBeHidden();
+      await expect(page.locator("#copy-setup-report-status")).toHaveText("");
+      await expect(page.locator("#setup-report")).not.toBeFocused();
+      await expect(page.locator("#setup-report")).not.toHaveClass(
+        /manual-copy/,
+      );
+      retry.release();
+    });
+
   for (const failure of ["network", "json"])
     test(`lost Back status ${failure} reconciles later runtime refusal`, async ({
       page,

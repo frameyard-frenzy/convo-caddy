@@ -381,14 +381,69 @@ test("stale clipboard rejection does not focus or fallback-copy a replacement", 
   );
 });
 
-test("reset cancel preserves drafts and performs no reset mutation", async ({
+test("stale clipboard success does not label a replacement report copied", async ({
   page,
 }) => {
   await boot(page);
   await draft(page);
+  await selectModelAfterKeyEdit(page);
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "response_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await page.evaluate(() => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => (resolve = done));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => promise },
+    });
+    Object.assign(window, { resolveReplacementClipboard: resolve });
+  });
+  await page.locator("#copy-assistant-report").click();
+  await page.route("**/api/setup/connections/hermes/test", (route) =>
+    route.fulfill({ json: { state: "identity_rejected" } }),
+  );
+  await page.locator("#test-hermes-assistant").click();
+  await page.evaluate(() =>
+    (
+      window as typeof window & { resolveReplacementClipboard: () => void }
+    ).resolveReplacementClipboard(),
+  );
+  await expect(page.locator("#assistant-report")).toHaveValue(
+    /\[identity_rejected\]/,
+  );
+  await expect(page.locator("#copy-assistant-report-status")).toHaveText("");
+  await expect(page.locator("#assistant-report")).not.toBeFocused();
+});
+
+test("reset cancel preserves every draft and performs zero DELETE requests", async ({
+  page,
+}) => {
+  await boot(page);
+  await draft(page);
+  let deletes = 0;
+  await page.route("**/api/setup/credentials", (route) => {
+    if (route.request().method() === "DELETE") deletes++;
+    return route.continue();
+  });
+  const before = await page
+    .locator("#connections input, #connections select")
+    .evaluateAll((nodes) =>
+      nodes.map((node) => (node as HTMLInputElement | HTMLSelectElement).value),
+    );
   page.once("dialog", (dialog) => dialog.dismiss());
   await page.locator("#reset").click();
-  await expect(page.locator("#recall-api-key")).toHaveValue("synthetic-recall");
+  expect(
+    await page
+      .locator("#connections input, #connections select")
+      .evaluateAll((nodes) =>
+        nodes.map(
+          (node) => (node as HTMLInputElement | HTMLSelectElement).value,
+        ),
+      ),
+  ).toEqual(before);
+  expect(deletes).toBe(0);
   await expect(page.locator("#setup-message")).toHaveText("");
 });
 
@@ -578,8 +633,35 @@ test("native close handshake preserves settings drafts on cancel/save failure, t
   );
   await expect(page.locator("#recall-api-key")).toHaveValue("synthetic-recall");
   await expect(page.locator("#save-connections")).toBeEnabled();
+  await expect(page.locator("#setup-report")).toHaveValue(/Result: failed/);
   fail = false;
-  expect(await invoke("save")).toBe("ready");
+  const retry = gate();
+  await page.evaluate(() => {
+    let resolve!: () => void;
+    const promise = new Promise<void>((done) => (resolve = done));
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText: () => promise },
+    });
+    Object.assign(window, { resolveCloseClipboard: resolve });
+  });
+  await page.locator("#copy-setup-report").click();
+  await page.unroute("**/api/setup/connections");
+  await page.route("**/api/setup/connections", async (route) => {
+    await retry.promise;
+    await route.fulfill({ json: overview });
+  });
+  const save = invoke("save");
+  await expect(page.locator("#setup-report-panel")).toBeHidden();
+  await page.evaluate(() =>
+    (
+      window as typeof window & { resolveCloseClipboard: () => void }
+    ).resolveCloseClipboard(),
+  );
+  await expect(page.locator("#setup-report-panel")).toBeHidden();
+  await expect(page.locator("#copy-setup-report-status")).toHaveText("");
+  retry.release();
+  expect(await save).toBe("ready");
   expect(acknowledgements).toBe(0);
   expect(
     await page.evaluate(() =>
