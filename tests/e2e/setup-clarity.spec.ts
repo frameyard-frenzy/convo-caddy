@@ -88,6 +88,11 @@ for (const width of [1100, 390])
       path: `${evidence}/save-copy-reset-full-${width}.png`,
       fullPage: true,
     });
+    await page.locator("#reset").focus();
+    await expect(page.locator("#reset")).toBeFocused();
+    await page.screenshot({
+      path: `${evidence}/save-copy-reset-reset-focus-${width}.png`,
+    });
   });
 
 test.describe("Back through actual saved setup routes", () => {
