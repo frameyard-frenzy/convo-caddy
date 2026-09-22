@@ -18,8 +18,9 @@ for (const width of [1280, 900, 390])
     await expect(page.locator("#reload")).toBeDisabled();
     await expect(page.locator("#reset")).toHaveCSS(
       "background-color",
-      "rgb(196, 43, 37)",
+      "rgba(0, 0, 0, 0)",
     );
+    await expect(page.locator("#reset")).toHaveCSS("color", "rgb(169, 34, 30)");
     await page.locator("#recall-api-key").focus();
     await expect(page.locator("#recall-api-key")).toHaveCSS(
       "outline-offset",

@@ -630,9 +630,10 @@ for (const width of [1100, 390]) {
     await page.getByLabel("Where Hermes runs").selectOption("local");
     await page.locator("#hermes-endpoint-path").scrollIntoViewIfNeeded();
     await expect(page.getByLabel("API base path")).toHaveValue("/");
-    await expect(
-      page.getByText(/^Root \/ with model assistant does not imply/),
-    ).toBeVisible();
+    await expect(page.getByLabel("API base path")).toBeVisible();
+    expect(readFileSync("docs/hermes-connection-setup.md", "utf8")).toContain(
+      "does not imply `/p/assistant`",
+    );
     for (const id of [
       "ngrok-domain",
       "recall-api-key",
@@ -764,11 +765,11 @@ test("failed public route produces a copyable private-safe report and edits stal
     "Warning — Setup not fully verified",
   );
   await expect(page.locator("#recall-outcome")).toContainText(
-    "private Teams test call",
+    "solo Teams call",
   );
   await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
   const report = page.locator("#callback-report");
-  await expect(report).toBeVisible();
+  await expect(report).not.toBeVisible();
   await expect(report).toHaveValue(
     /Recall credentials: authenticated_read_only/,
   );
@@ -781,7 +782,9 @@ test("failed public route produces a copyable private-safe report and edits stal
   await expect(report).not.toHaveValue(
     /fixture\.ngrok|synthetic-.*canary|https:\/\//,
   );
-  const copy = page.getByRole("button", { name: "Copy diagnostic summary" });
+  const copy = page.getByRole("button", {
+    name: "Copy the secret-free diagnostic summary for your agent",
+  });
   await copy.focus();
   expect(await copy.evaluate((el) => getComputedStyle(el).outlineOffset)).toBe(
     "0px",
@@ -1035,7 +1038,7 @@ test("valid component errors stay precise beside malformed evidence", async ({
     /Local callback: unverified/,
   );
   await expect(page.locator("#component-results")).toContainText(
-    "public route reset the connection",
+    "Connection reset",
   );
   await expect(page.locator("#callback-report")).toHaveValue(
     /Public callback: failed \[connection_reset\]/,
@@ -1100,7 +1103,7 @@ test("disclosure and copied evidence reset on edit and held rerun", async ({
   await enterDraft(page);
   setup.setLocalListenerFailure(true);
   await page.locator("#test-connections").click();
-  await page.getByRole("button", { name: "Copy diagnostic summary" }).click();
+  await page.locator("#copy-callback-report").click();
   await expect(page.locator("#recall-details")).toHaveAttribute("open", "");
   await page.locator("#ngrok-domain").fill("changed.ngrok.app");
   await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
@@ -1171,6 +1174,89 @@ test("warning remains advisory and complete settings can still save", async ({
   ).toBeVisible();
 });
 
+test("revised setup keeps the warning concise and separates Save from Reset", async ({
+  page,
+  setup,
+}) => {
+  await page.setViewportSize({ width: 1100, height: 900 });
+  await enterDraft(page);
+  setup.setCallbackDiagnostic({ code: "connection_reset" });
+  await page.locator("#test-connections").click();
+  await expect(page.locator("#recall-outcome")).toHaveText(
+    "⚠ Warning — Setup not fully verified. Make a solo Teams call and check that transcript text appears.",
+  );
+  await expect(page.locator("#callback-report")).not.toBeVisible();
+  await expect(page.locator("#copy-callback-report")).toBeVisible();
+  await expect(page.locator("#hermes-heading").locator("..")).not.toContainText(
+    "Full MagicDNS names also work",
+  );
+  const saveBox = await page.locator("#save-connections").boundingBox();
+  const resetBox = await page.locator("#reset").boundingBox();
+  expect(saveBox).not.toBeNull();
+  expect(resetBox).not.toBeNull();
+  expect(resetBox!.y).toBeGreaterThan(saveBox!.y + saveBox!.height + 32);
+  await expect(page.locator(".save-row")).toHaveCSS("border-top-width", "0px");
+});
+
+test("every setup error offers a current bounded agent copy", async ({
+  page,
+  setup,
+}) => {
+  await enterDraft(page);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: (value: string) => {
+          (
+            window as typeof window & { copiedSetupDiagnostic?: string }
+          ).copiedSetupDiagnostic = value;
+          return Promise.resolve();
+        },
+      },
+    });
+  });
+  const copied = () =>
+    page.evaluate(
+      () =>
+        (window as typeof window & { copiedSetupDiagnostic?: string })
+          .copiedSetupDiagnostic ?? "",
+    );
+  const expectSafeCopy = async (button: string, operation: RegExp) => {
+    await page.locator(button).click();
+    await expect.poll(copied).toMatch(operation);
+    expect(await copied()).not.toMatch(
+      /synthetic-private|synthetic-recall-canary|fixture\.ngrok\.app|\/Volumes\//,
+    );
+  };
+
+  setup.hold("recall", true).release();
+  await page.locator("#test-connections").click();
+  await expectSafeCopy("#copy-callback-report", /Recall and ngrok test/);
+
+  setup.hold("discovery", true).release();
+  await page.locator("#discover-hermes-profiles").click();
+  await expectSafeCopy("#copy-hermes-report", /Hermes model discovery/);
+
+  await page.locator("#discover-hermes-profiles").click();
+  await page.locator("#hermes-profile").selectOption("everyday");
+  setup.hold("assistant", true).release();
+  await page.locator("#test-hermes-assistant").click();
+  await expectSafeCopy("#copy-assistant-report", /Hermes assistant test/);
+
+  setup.setStorageFailure(true);
+  await page.locator("#save-connections").click();
+  await expectSafeCopy("#copy-setup-report", /Save settings/);
+  setup.setStorageFailure(false);
+
+  setup.hold("reset", true).release();
+  page.once("dialog", (dialog) => dialog.accept());
+  await page.locator("#reset").click();
+  await expectSafeCopy("#copy-setup-report", /Reset credentials/);
+  await page.locator("#ngrok-domain").fill("newer.ngrok.app");
+  await expect(page.locator("#setup-report-panel")).toBeHidden();
+});
+
 test("success states truthful limits and closes earlier failure details", async ({
   page,
   setup,
@@ -1186,10 +1272,10 @@ test("success states truthful limits and closes earlier failure details", async 
   );
   await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
   await expect(page.locator("#component-results")).toContainText(
-    "do not verify real Recall transcript delivery",
+    "Synthetic only: no bot or live delivery was verified",
   );
-  await expect(page.locator("#component-results")).toContainText(
-    "workspace signing secret",
+  await expect(page.locator("#callback-report")).toHaveValue(
+    /does not prove Recall delivery.*signing secret/s,
   );
 });
 
@@ -1295,7 +1381,7 @@ test("diagnostic report gives truthful standalone success, not-attempted and cer
     /because ngrok endpoint setup failed/,
   );
   await expect(page.locator("#component-results")).toContainText(
-    "Not attempted because an earlier prerequisite failed",
+    "Not attempted; an earlier step failed",
   );
 
   setup.setLocalListenerFailure(false);
@@ -1326,9 +1412,9 @@ test("clipboard denial leaves the complete report selected for manual copy", asy
       value: () => false,
     });
   });
-  await page.getByRole("button", { name: "Copy diagnostic summary" }).click();
+  await page.locator("#copy-callback-report").click();
   await expect(page.locator("#copy-callback-report-status")).toContainText(
-    "Select the summary and copy it manually",
+    "Press Command-C to copy the selected summary",
   );
   await expect(page.locator("#callback-report")).toBeFocused();
   expect(
@@ -1349,7 +1435,7 @@ for (const width of [1100, 390]) {
     setup.setCallbackDiagnostic({ code: "connection_reset" });
     await page.locator("#test-connections").click();
     await page.locator("#test-connections").focus();
-    for (const id of ["callback-report", "copy-callback-report"]) {
+    for (const id of ["copy-callback-report"]) {
       const control = page.locator(`#${id}`);
       await control.scrollIntoViewIfNeeded();
       for (let presses = 0; presses < 5; presses++) {

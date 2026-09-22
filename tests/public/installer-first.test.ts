@@ -93,7 +93,7 @@ describe("installer-first first-time onboarding", () => {
     const bundled = readFileSync("docs/hermes-connection-setup.md", "utf8");
     const renderedBundled = renderSetupGuide(bundled);
     for (const phrase of [
-      "Copy diagnostic summary",
+      "Copy the secret-free diagnostic summary for your agent",
       "another trusted network",
       "does not prove Recall delivery",
       "older wording",
