@@ -30,11 +30,64 @@ for (const width of [1280, 900, 390])
       path: `${evidence}/after-settings-${width}.png`,
       fullPage: true,
     });
+    if (width === 1280 || width === 390) {
+      await page.locator("#reset").scrollIntoViewIfNeeded();
+      await page.locator("#reset").focus();
+      await expect(page.locator("#reset")).toBeFocused();
+      await expect(page.locator("#save-connections")).toBeVisible();
+      await expect(page.locator("#reset")).toBeVisible();
+      await page.screenshot({
+        path: `${evidence}/save-reset-context-${width}.png`,
+      });
+      await page.screenshot({
+        path: `${evidence}/save-reset-full-${width}.png`,
+        fullPage: true,
+      });
+    }
     expect(
       await page.evaluate(
         () => document.documentElement.scrollWidth <= innerWidth,
       ),
     ).toBe(true);
+  });
+
+for (const width of [1100, 390])
+  test(`Save, diagnostic copy and Reset share a compact focused viewport at ${width}`, async ({
+    page,
+    setup,
+  }) => {
+    await page.setViewportSize({ width, height: 900 });
+    void setup;
+    await page.route("**/api/setup/connections", (route) =>
+      route.fulfill({
+        status: 503,
+        json: { code: "settings_storage_unavailable" },
+      }),
+    );
+    await page.locator("#ngrok-domain").fill("fixture.ngrok.app");
+    await page.locator("#recall-api-key").fill("synthetic-recall");
+    await page
+      .locator("#recall-webhook-verification-secret")
+      .fill("whsec_c3ludGhldGlj");
+    await page.locator("#ngrok-authtoken").fill("synthetic-ngrok");
+    await page.locator("#save-connections").click();
+    await expect(page.locator("#setup-report-panel")).toBeVisible();
+    await page.locator("#save-connections").focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#copy-setup-report")).toBeFocused();
+    await page.locator("#reset").scrollIntoViewIfNeeded();
+    for (const id of ["save-connections", "copy-setup-report", "reset"])
+      await expect(page.locator(`#${id}`)).toBeVisible();
+    await page.locator("#save-connections").focus();
+    await page.keyboard.press("Tab");
+    await expect(page.locator("#copy-setup-report")).toBeFocused();
+    await page.screenshot({
+      path: `${evidence}/save-copy-reset-context-${width}.png`,
+    });
+    await page.screenshot({
+      path: `${evidence}/save-copy-reset-full-${width}.png`,
+      fullPage: true,
+    });
   });
 
 test.describe("Back through actual saved setup routes", () => {
@@ -93,6 +146,18 @@ test.describe("Back through actual saved setup routes", () => {
         if (reply === "refused") {
           await expect(page.locator("#setup-message")).toContainText(
             "Synthetic refusal",
+          );
+          await expect(page.locator("#copy-setup-report")).toBeEnabled();
+          await expect(page.locator("#setup-report")).toHaveValue(
+            /Operation: Return to app/,
+          );
+          await page.locator("#copy-setup-report").focus();
+          await page.keyboard.press("Enter");
+          await expect(page.locator("#copy-setup-report-status")).toHaveText(
+            "Copied",
+          );
+          await expect(page.locator("#setup-report")).not.toHaveValue(
+            /Synthetic refusal|draft\.ngrok\.app/,
           );
         } else {
           await setup.waitFor("reload");
@@ -267,6 +332,15 @@ test.describe("Back through actual saved setup routes", () => {
       await expect(
         page.getByRole("button", { name: "Save", exact: true }),
       ).toBeDisabled();
+      await expect(page.locator("#copy-setup-report")).toBeEnabled();
+      await page.locator("#copy-setup-report").focus();
+      await page.keyboard.press("Enter");
+      await expect(page.locator("#copy-setup-report-status")).toHaveText(
+        "Copied",
+      );
+      await expect(page.locator("#setup-report")).toHaveValue(
+        /Operation: Confirm return to app/,
+      );
       await expect(page.locator("#ngrok-domain")).toHaveValue(
         "draft.ngrok.app",
       );

@@ -9,7 +9,7 @@ const outcomes = {recall: byId("recall-outcome"), hermes: byId("hermes-outcome")
 const lists = {recall: byId("component-results"), hermes: byId("hermes-results"), assistant: byId("assistant-results")};
 const inputs = [...document.querySelectorAll("input,select")];
 const buttons = [...document.querySelectorAll("button")];
-const reportGroups = Object.fromEntries(["callback","hermes","assistant","setup"].map(name => [name,{panel:byId(name + "-report-panel"),field:byId(name + "-report"),status:byId("copy-" + name + "-report-status"),button:byId("copy-" + name + "-report")}])) , callbackReport = reportGroups.callback.field;
+const reportGroups = Object.fromEntries(["callback","hermes","assistant","setup"].map(name => [name,{panel:byId(name + "-report-panel"),field:byId(name + "-report"),status:byId("copy-" + name + "-report-status"),button:byId("copy-" + name + "-report"),revision:0}])) , callbackReport = reportGroups.callback.field;
 let initial = null, initialDraft = "", mutationLocked = true, active = null, operation = 0;
 const revisions = {recall: 0, hermes: 0, assistant: 0};
 
@@ -34,10 +34,10 @@ function details(group, items) {
   for (const text of items) { const item = document.createElement("li"); item.textContent = text; lists[group].append(item); }
 }
 function clearAgentReport(name) {
-  const report = reportGroups[name]; report.panel.hidden = true; report.field.value = ""; report.field.classList.remove("manual-copy"); report.status.textContent = "";
+  const report = reportGroups[name]; report.revision++; report.panel.hidden = true; report.field.value = ""; report.field.classList.remove("manual-copy"); report.status.textContent = ""; report.button.disabled = true;
 }
 function setAgentReport(name, lines) {
-  const report = reportGroups[name]; report.field.value = lines.join("\\n"); report.field.classList.remove("manual-copy"); report.panel.hidden = false; report.status.textContent = "";
+  const report = reportGroups[name]; report.revision++; report.field.value = lines.join("\\n"); report.field.classList.remove("manual-copy"); report.panel.hidden = false; report.status.textContent = ""; report.button.disabled = false;
 }
 function clearCallbackReport() {
   clearAgentReport("callback"); byId("recall-details").open = false;
@@ -45,6 +45,7 @@ function clearCallbackReport() {
 function syncControls() {
   for (const input of inputs) input.disabled = mutationLocked;
   for (const button of buttons) button.disabled = mutationLocked || active !== null;
+  for (const report of Object.values(reportGroups)) report.button.disabled = report.panel.hidden || !report.field.value;
   byId("reload").hidden = initial?.mode !== "ready";
   byId("reload").disabled ||= initial?.mode !== "ready";
   byId("return-guidance").hidden = initial?.mode === "ready";
@@ -266,9 +267,11 @@ byId("test-connections").addEventListener("click", () => run("recall", "Checking
 }));
 async function copyAgentReport(name) {
   const report = reportGroups[name]; if (report.panel.hidden || !report.field.value) return;
+  const revision = report.revision, value = report.field.value;
   let copied = false;
-  try { await navigator.clipboard.writeText(report.field.value); copied = true; }
-  catch { report.field.classList.add("manual-copy"); report.field.focus(); report.field.select(); try { copied = document.execCommand("copy"); } catch {} if (copied) report.field.classList.remove("manual-copy"); }
+  try { await navigator.clipboard.writeText(value); copied = true; }
+  catch { if (report.revision !== revision || report.field.value !== value || report.panel.hidden) return; report.field.classList.add("manual-copy"); report.field.focus(); report.field.select(); try { copied = document.execCommand("copy"); } catch {} if (copied) report.field.classList.remove("manual-copy"); }
+  if (report.revision !== revision || report.field.value !== value || report.panel.hidden) return;
   report.status.textContent = copied ? "Copied" : "Press Command-C to copy the selected summary.";
 }
 for (const name of Object.keys(reportGroups)) reportGroups[name].button.addEventListener("click", () => copyAgentReport(name));
@@ -284,7 +287,7 @@ function showHermesResultReport(name,operationName,state) {
 }
 byId("discover-hermes-profiles").addEventListener("click", () => {
   if (mutationLocked || active !== null) return;
-  setModels([]); revisions.assistant++; setOutcome("assistant", "", ""); details("assistant", []);
+  clearAgentReport("assistant"); setModels([]); revisions.assistant++; setOutcome("assistant", "", ""); details("assistant", []);
   return run("hermes", "Checking connection…", () => request("/api/setup/connections/hermes/discover", {method:"POST",body:JSON.stringify(hermesPayload())}), value => {
     if (value.state === "profiles_advertised" && value.profiles.length) {
       setModels(value.profiles); setOutcome("hermes", "success", "Connected — models loaded");
@@ -298,7 +301,7 @@ byId("test-hermes-assistant").addEventListener("click", () => run("assistant", "
 }, value => {
   const passed = value.state === "assistant_verified_synthetic";
   setOutcome("assistant", passed ? "success" : "failure", passed ? "Assistant test passed" : "Assistant test failed — check the selected model and Hermes provider configuration before retrying.");
-  const state = passed ? "assistant_verified_synthetic" : safeHermesState(value.state,["assistant_rejected","assistant_invalid","unavailable"]);
+  const state = passed ? "assistant_verified_synthetic" : safeHermesState(value.state,["response_rejected","profile_not_advertised","authentication_rejected","identity_rejected","models_rejected","unavailable","ssh_failed","forwarding_unavailable","transport_unknown"]);
   details("assistant", ["Result: " + state.replaceAll("_"," ")]);
   if (!passed) showHermesResultReport("assistant","Hermes assistant test",state);
 }));
@@ -315,8 +318,11 @@ function hermesFailure(state) {
     unavailable: "Hermes unreachable or timed out — verify both Macs are online and awake, the private network, and the host’s loopback API port. Then load models again."
   })[state] || "Unknown connection failure — verify the address and host configuration, then load models again.";
 }
-function showSetupFailureReport(operationName,error,uncertain = false) {
-  setAgentReport("setup",["Convo Caddy setup diagnostic","Operation: " + operationName,"Result: " + (uncertain ? "response_unconfirmed" : "failed") + " [" + safeSetupCode(error) + "]","The draft was retained. No raw error, credential, address, URL, transcript, filesystem, user, host, or SSH value is included.","Next action: give this summary to your agent before resetting credentials."]);
+function showSetupFailureReport(operationName,error,uncertain = false,disposition = "The unsaved draft was retained.") {
+  setAgentReport("setup",["Convo Caddy setup diagnostic","Operation: " + operationName,"Result: " + (uncertain ? "response_unconfirmed" : "failed") + " [" + safeSetupCode(error) + "]",disposition + " No raw error, credential, address, URL, transcript, filesystem, user, host, or SSH value is included.","Next action: give this summary to your agent before resetting credentials."]);
+}
+function showSetupStatusReport(operationName,result,disposition,nextAction) {
+  setAgentReport("setup",["Convo Caddy setup diagnostic","Operation: " + operationName,"Result: " + result,disposition + " No raw error, credential, address, URL, transcript, filesystem, user, host, or SSH value is included.","Next action: " + nextAction]);
 }
 
 function beginMutation() {
@@ -327,9 +333,10 @@ async function acknowledgeSaved() {
   try {
     await request("/api/setup/save-acknowledgement", {method:"POST",body:"{}"});
     message.textContent = "Settings saved. Reloading Convo Caddy… If this page remains, quit and reopen Convo Caddy.";
-  } catch {
+  } catch (error) {
     // Delivery may have succeeded. Never unlock a document whose teardown may be queued.
     message.textContent = "Settings saved. Reload confirmation was not received. Quit and reopen Convo Caddy; editing stays locked to protect your saved settings.";
+    showSetupFailureReport("Confirm saved settings reload",error,true,"Settings were saved and secret drafts were erased; editing remains locked because reload delivery is uncertain.");
   }
 }
 let closeApproved = false, closePreviousLock = false;
@@ -337,9 +344,10 @@ let closeApproved = false, closePreviousLock = false;
 // through a lost reply: runtime navigation may already be queued. A known
 // refusal revokes it and restores the untouched draft; a new document resets it.
 let backApproved = false;
-function refuseBack(text) {
+function refuseBack(text,error) {
   if (closeApproved) return;
   backApproved = false; message.textContent = text;
+  showSetupFailureReport("Return to app",error,false,"The unsaved draft was retained and navigation was refused.");
   mutationLocked = false; syncControls();
 }
 const hasCloseDraft = () => initial !== null && JSON.stringify(inputs.map(input => input.value)) !== initialDraft;
@@ -396,7 +404,7 @@ byId("reload").addEventListener("click", async () => {
   backApproved = true;
   try { await request("/api/setup/reload", {method:"POST",body:"{}"}); }
   catch (error) {
-    if (error.body) { refuseBack(error.message); return; }
+    if (error.body) { refuseBack(error.message,error); return; }
     // A lost POST reply is not a refusal. Reconcile read-only without issuing
     // another mutation or revoking an already approved navigation.
   }
@@ -408,14 +416,15 @@ byId("reload").addEventListener("click", async () => {
     try {
       const result = await request("/api/setup/reload", {signal: AbortSignal.timeout(Math.max(1, Math.min(1000, deadline - Date.now())))});
       if (closeApproved) return;
-      if (result.state === "blocked") {refuseBack("Could not return to the app. Your entries are still here; try again when the current operation finishes.");return;}
+      if (result.state === "blocked") {refuseBack("Could not return to the app. Your entries are still here; try again when the current operation finishes.",{body:{code:"setup_unknown"}});return;}
       if (result.state === "reloaded") return;
     } catch { /* Read-only reconciliation can retry after a lost or unreadable status. */ }
   }
   if (closeApproved) return;
   message.textContent = "Return could not be confirmed. Your entries are still here; editing stays locked while return is uncertain. Quit and reopen when ready to leave settings.";
+  showSetupStatusReport("Confirm return to app","response_unconfirmed [setup_unknown]","The unsaved draft remains in this locked page while navigation is uncertain.","give this summary to your agent, then quit and reopen Convo Caddy when ready.");
 });
 // Quit and Back grant only document-local, explicitly approved unload authority.
 syncControls();
-request("/api/setup").then(value => { renderOverview(value); mutationLocked = false; syncControls(); }).catch(error => { message.textContent = "Saved setup could not be loaded. Quit and reopen Convo Caddy; no draft has been changed."; showSetupFailureReport("Load saved setup",error); });
+request("/api/setup").then(value => { renderOverview(value); mutationLocked = false; syncControls(); }).catch(error => { message.textContent = "Saved setup could not be loaded. Quit and reopen Convo Caddy; no draft has been changed."; showSetupFailureReport("Load saved setup",error,false,"No setup values were loaded and editing remains locked."); syncControls(); });
 `;
