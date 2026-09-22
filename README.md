@@ -14,7 +14,9 @@ Keep your interview questions and follow-ups beside a Teams call, so you can lis
 
 ### Install
 
-**Download:** [Convo Caddy 0.1.0 — unnotarized alpha](https://github.com/frameyard-frenzy/convo-caddy/releases/tag/v0.1.0) is available for Apple Silicon Macs running macOS 14 or later. Download `Convo-Caddy-0.1.0-arm64.dmg`; checksums and a source manifest are attached to the release. This alpha is ad-hoc signed, **not Developer ID signed or notarized by Apple**, and macOS may block first launch.
+**Download:** [Convo Caddy 0.2.0 — unnotarized alpha](https://github.com/frameyard-frenzy/convo-caddy/releases/tag/v0.2.0) is available for Apple Silicon Macs running macOS 14 or later. Download `Convo-Caddy-0.2.0-arm64.dmg`; checksums and a source manifest are attached to the release. This alpha is ad-hoc signed, **not Developer ID signed or notarized by Apple**, and macOS may block first launch.
+
+DMG SHA-256: `df1a068a0146c8fda50dc8a09d66209276f70a3733b9a7e5c2faabd8b78fc71e`.
 
 On the Mac where you will conduct interviews:
 
@@ -24,6 +26,8 @@ On the Mac where you will conduct interviews:
 4. Open Finder → **Applications** and double-click **Convo Caddy**. If macOS cannot verify the developer or check the app for malicious software, follow the release page’s per-app **Privacy & Security → Open Anyway** instructions only if you trust this release. Stop on a “will damage your computer” or damaged/altered-download warning. Do not disable Gatekeeper globally. The DMG’s standalone uninstaller is also unnotarized.
 
 Connection settings opens on first launch. You can return to it through **Configuration → Connection Settings…**. Fill its three sections below in order. Keep keys in your password manager and masked app fields, never in chat or screenshots.
+
+**Upgrading:** finish any active capture, preserve unsaved work, quit Caddy normally, and replace the app in Applications using the same installer steps. Do not uninstall or reset credentials just to upgrade.
 
 ### Recall
 

@@ -19,9 +19,9 @@ describe("installer-first first-time onboarding", () => {
     expect(readme.split("## For people")[0]).toContain("interview questions");
     expect(people).toContain("### Requirements");
     expect(people).toContain(
-      "https://github.com/frameyard-frenzy/convo-caddy/releases/tag/v0.1.0",
+      "https://github.com/frameyard-frenzy/convo-caddy/releases/tag/v0.2.0",
     );
-    expect(people).toContain("Convo-Caddy-0.1.0-arm64.dmg");
+    expect(people).toContain("Convo-Caddy-0.2.0-arm64.dmg");
     expect(people).toContain("unnotarized alpha");
     expect(people).toContain("not Developer ID signed or notarized by Apple");
     ordered(people, [
