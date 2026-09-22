@@ -4,7 +4,7 @@ Start with [README — Install](../README.md#install) or [README — Uninstall](
 
 ## Ordinary installer and removal
 
-Open the verified `Convo Caddy-0.1.0-arm64.dmg`. Drag **Convo Caddy** to
+Open the verified `Convo Caddy-0.2.0-arm64.dmg`. Drag **Convo Caddy** to
 **Applications** in the top row, eject the disk, then launch from Applications.
 When removing later, quit normally, reopen the disk, and open **Uninstall Convo
 Caddy.app** under **Remove Convo Caddy**. With an existing workspace, the dialog

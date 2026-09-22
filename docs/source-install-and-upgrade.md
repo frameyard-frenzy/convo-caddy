@@ -91,7 +91,7 @@ Expected: the older app's window closes. If quitting is unresolved, stop. Next: 
 **Interview Mac, the Terminal used for this build:** run:
 
 ```bash
-open "out/make/Convo Caddy-0.1.0-arm64.dmg"
+open "out/make/Convo Caddy-0.2.0-arm64.dmg"
 ```
 
 Expected: a Finder installer window with Convo Caddy and Applications in its top row. If it does not open, stop at the error. Next: 9c.
