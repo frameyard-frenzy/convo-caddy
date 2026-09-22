@@ -75,7 +75,7 @@ command compiles and tests source, without creating or signing an app bundle.
 ## Open the installer
 
 ```bash
-open "out/make/Convo Caddy-0.1.0-arm64.dmg"
+open "out/make/Convo Caddy-0.2.0-arm64.dmg"
 ```
 
 Use the [source installation and upgrade recipe](source-install-and-upgrade.md)
