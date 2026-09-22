@@ -405,6 +405,10 @@ test("stale clipboard success does not label a replacement report copied", async
     route.fulfill({ json: { state: "identity_rejected" } }),
   );
   await page.locator("#test-hermes-assistant").click();
+  await expect(page.locator("#assistant-report-panel")).toBeVisible();
+  await expect(page.locator("#assistant-report")).toHaveValue(
+    /\[identity_rejected\]/,
+  );
   await page.evaluate(() =>
     (
       window as typeof window & { resolveReplacementClipboard: () => void }
