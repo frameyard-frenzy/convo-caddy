@@ -79,6 +79,8 @@ export type RenderHandlers = {
   ): void;
   updateCaptureMeetingUrl(meetingUrl: string): void;
   updateCaptureMeetingPlatform(meetingPlatform: MeetingPlatform): void;
+  beginCapturePlatformInteraction(): void;
+  endCapturePlatformInteraction(): void;
   updateCaptureDisplayName(displayName: string): void;
   retryHermes?(): void;
   setRuntimeDiagnosticsOpen(open: boolean): void;
@@ -467,6 +469,27 @@ function renderLiveCapture(
   platform.value = meetingPlatform;
   platform.disabled =
     model.startingCapture || model.state.capture.mode === "recall";
+  platform.addEventListener("pointerdown", () => {
+    handlers.beginCapturePlatformInteraction();
+  });
+  platform.addEventListener("pointercancel", () => {
+    handlers.endCapturePlatformInteraction();
+  });
+  platform.addEventListener("click", () => {
+    handlers.endCapturePlatformInteraction();
+  });
+  platform.addEventListener("keydown", (event) => {
+    if (
+      [" ", "Enter", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
+    )
+      handlers.beginCapturePlatformInteraction();
+  });
+  platform.addEventListener("keyup", (event) => {
+    if (event.key === "Escape") handlers.endCapturePlatformInteraction();
+  });
+  platform.addEventListener("blur", () => {
+    handlers.endCapturePlatformInteraction();
+  });
   platform.addEventListener("change", () => {
     handlers.updateCaptureMeetingPlatform(platform.value as MeetingPlatform);
   });

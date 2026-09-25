@@ -76,6 +76,8 @@ let sessionHistory: WorkspaceSessionSummary[] = [];
 let startingNextSession = false;
 let captureMeetingUrl = "";
 let captureMeetingPlatform: MeetingPlatform = "microsoft_teams_personal";
+let capturePlatformInteractionActive = false;
+let capturePlatformRenderDeferred = false;
 let captureDisplayName = "";
 let startingCapture = false;
 let runtimeReadiness: RuntimeReadiness | null = null;
@@ -88,6 +90,11 @@ let workspaceOverview: WorkspaceOverview | null = null;
 
 function render(): void {
   if (composingInput) return;
+  if (capturePlatformInteractionActive) {
+    capturePlatformRenderDeferred = true;
+    return;
+  }
+  capturePlatformRenderDeferred = false;
   const inputFocus = captureInputFocus();
   const focusedId =
     document.activeElement instanceof HTMLElement
@@ -132,7 +139,16 @@ function render(): void {
       },
       updateCaptureMeetingPlatform: (meetingPlatform) => {
         captureMeetingPlatform = meetingPlatform;
+        capturePlatformInteractionActive = false;
         render();
+      },
+      beginCapturePlatformInteraction: () => {
+        capturePlatformInteractionActive = true;
+      },
+      endCapturePlatformInteraction: () => {
+        if (!capturePlatformInteractionActive) return;
+        capturePlatformInteractionActive = false;
+        if (capturePlatformRenderDeferred) render();
       },
       updateCaptureDisplayName: (displayName) => {
         captureDisplayName = displayName;
