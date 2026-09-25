@@ -8,6 +8,24 @@ test("selects Meet, keeps the URL while switching, and submits the platform", as
   const teamsInput = page.getByLabel("Personal Microsoft Teams meeting link");
 
   await expect(platform).toHaveValue("microsoft_teams_personal");
+  const typography = await platform.evaluate((element) => {
+    const style = getComputedStyle(element);
+    const meetingInput = document.querySelector<HTMLInputElement>(
+      "#capture-meeting-url",
+    );
+    const inputStyle = meetingInput ? getComputedStyle(meetingInput) : null;
+    return {
+      family: style.fontFamily,
+      size: style.fontSize,
+      inputFamily: inputStyle?.fontFamily,
+      inputSize: inputStyle?.fontSize,
+    };
+  });
+  expect(typography.family).toContain("Instrument Sans");
+  expect(typography).toMatchObject({
+    family: typography.inputFamily,
+    size: typography.inputSize,
+  });
   await page.screenshot({
     path: testInfo.outputPath("teams-selected.png"),
     fullPage: true,

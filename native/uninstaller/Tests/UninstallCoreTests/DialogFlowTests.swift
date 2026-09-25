@@ -37,7 +37,8 @@ struct DialogFlowTests {
             #expect(ui.prompts.count == 1);#expect(ui.pickers == 0);#expect(f.keys.removed == 1)
             #expect(!f.exists("Library/Application Support/Convo Caddy"))
             let details=ui.prompts.map(\.detail).joined()
-            #expect(details.contains("Check the meeting in Teams") == (name == "joining" || name == "failed"))
+            #expect(details.contains("Check the meeting app") == (name == "joining" || name == "failed"))
+            #expect(!details.contains("Check the meeting in Teams"))
             #expect(!details.contains("recording stopped"))
         }
     }
