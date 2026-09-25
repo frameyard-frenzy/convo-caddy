@@ -79,8 +79,6 @@ export type RenderHandlers = {
   ): void;
   updateCaptureMeetingUrl(meetingUrl: string): void;
   updateCaptureMeetingPlatform(meetingPlatform: MeetingPlatform): void;
-  beginCapturePlatformInteraction(): void;
-  endCapturePlatformInteraction(): void;
   updateCaptureDisplayName(displayName: string): void;
   retryHermes?(): void;
   setRuntimeDiagnosticsOpen(open: boolean): void;
@@ -175,6 +173,11 @@ export function renderApp(
   page.append(renderTranscript(model, handlers));
 
   const existingWorkspace = root.querySelector<HTMLElement>(".workspace");
+  const existingCapture = root.querySelector<HTMLElement>(".live-capture");
+  const newCapture = page.querySelector<HTMLElement>(".live-capture");
+  if (existingCapture && newCapture) {
+    updateLiveCapture(existingCapture, newCapture);
+  }
   const existingPrep = root.querySelector<HTMLElement>(".workspace-prep");
   const newPrep = page.querySelector<HTMLElement>(".workspace-prep");
   if (existingPrep && newPrep) {
@@ -233,7 +236,9 @@ export function renderApp(
           ? existingWorkspace
           : child === newPrep
             ? existingPrep
-            : null;
+            : child === newCapture
+              ? existingCapture
+              : null;
       if (retained) {
         while (cursor && cursor !== retained) {
           const next = cursor.nextSibling;
@@ -243,7 +248,12 @@ export function renderApp(
         cursor = retained.nextSibling;
       } else {
         currentPage.insertBefore(child, cursor);
-        if (cursor && cursor !== existingWorkspace && cursor !== existingPrep) {
+        if (
+          cursor &&
+          cursor !== existingWorkspace &&
+          cursor !== existingPrep &&
+          cursor !== existingCapture
+        ) {
           const next = cursor.nextSibling;
           cursor.remove();
           cursor = next;
@@ -436,6 +446,34 @@ function renderHeader(
   return header;
 }
 
+// Keep the native select AND every ancestor attached at their original position.
+// Reparenting even the same select can dismiss an OS popup. Only siblings are
+// replaced; readiness/transcript rendering never waits on guessed menu state.
+function updateLiveCapture(existing: HTMLElement, next: HTMLElement): void {
+  const select = existing.querySelector<HTMLSelectElement>("select")!;
+  const nextSelect = next.querySelector<HTMLSelectElement>("select")!;
+  if (select.value !== nextSelect.value) select.value = nextSelect.value;
+  if (select.disabled !== nextSelect.disabled)
+    select.disabled = nextSelect.disabled;
+  select.onchange = nextSelect.onchange;
+  for (const selector of [
+    ".capture-guidance",
+    ".capture-primary-field",
+    ".capture-submit",
+    ".capture-secondary-row",
+    ".capture-protocol",
+  ]) {
+    existing
+      .querySelector(selector)!
+      .replaceWith(next.querySelector(selector)!);
+  }
+  const form = existing.querySelector<HTMLFormElement>("form")!;
+  form.onsubmit = next.querySelector<HTMLFormElement>("form")!.onsubmit;
+  const waiting = next.querySelector(".capture-readiness-message");
+  existing.querySelector(".capture-readiness-message")?.remove();
+  if (waiting) form.append(waiting);
+}
+
 function renderLiveCapture(
   model: RenderModel,
   handlers: RenderHandlers,
@@ -469,30 +507,11 @@ function renderLiveCapture(
   platform.value = meetingPlatform;
   platform.disabled =
     model.startingCapture || model.state.capture.mode === "recall";
-  platform.addEventListener("pointerdown", () => {
-    handlers.beginCapturePlatformInteraction();
-  });
-  platform.addEventListener("pointercancel", () => {
-    handlers.endCapturePlatformInteraction();
-  });
-  platform.addEventListener("click", () => {
-    handlers.endCapturePlatformInteraction();
-  });
-  platform.addEventListener("keydown", (event) => {
-    if (
-      [" ", "Enter", "ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)
-    )
-      handlers.beginCapturePlatformInteraction();
-  });
-  platform.addEventListener("keyup", (event) => {
-    if (event.key === "Escape") handlers.endCapturePlatformInteraction();
-  });
-  platform.addEventListener("blur", () => {
-    handlers.endCapturePlatformInteraction();
-  });
-  platform.addEventListener("change", () => {
-    handlers.updateCaptureMeetingPlatform(platform.value as MeetingPlatform);
-  });
+  platform.onchange = (event) => {
+    handlers.updateCaptureMeetingPlatform(
+      (event.currentTarget as HTMLSelectElement).value as MeetingPlatform,
+    );
+  };
   platformField.append(platformLabel, platform);
   const meetingField = createElement(
     "div",
@@ -572,14 +591,14 @@ function renderLiveCapture(
     waiting.setAttribute("role", "status");
     form.append(waiting);
   }
-  form.addEventListener("submit", (event) => {
+  form.onsubmit = (event) => {
     event.preventDefault();
     handlers.startRecallCapture(
       meetingPlatform,
       meetingUrl.value,
       displayName.value,
     );
-  });
+  };
   const protocol = createElement("div", "capture-protocol");
   protocol.append(
     createElement("p", "capture-protocol-label", "After you press start"),

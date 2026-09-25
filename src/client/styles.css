@@ -303,7 +303,7 @@ h3 {
 
 .capture-primary-row {
   display: grid;
-  grid-template-columns: minmax(12rem, 0.45fr) minmax(18rem, 1fr) auto;
+  grid-template-columns: minmax(17rem, 0.45fr) minmax(18rem, 1fr) auto;
   gap: 0.75rem;
   align-items: end;
 }
@@ -685,6 +685,10 @@ h3 {
 }
 
 @media (max-width: 64rem) {
+  .capture-primary-row {
+    grid-template-columns: 1fr;
+  }
+
   .topbar {
     grid-template-columns: 1fr;
   }
