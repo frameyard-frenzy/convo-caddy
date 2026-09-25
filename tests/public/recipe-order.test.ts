@@ -47,7 +47,7 @@ describe("novice recipe dependencies", () => {
       "Save and choose a workspace",
       "prep/TEMPLATE.md",
       "Choose prep…",
-      "Personal Microsoft Teams meeting link",
+      "Microsoft Teams (personal)",
       "Start live capture",
       "Admission is recording authorization",
       "### 20c. End the meeting",
@@ -57,7 +57,7 @@ describe("novice recipe dependencies", () => {
     expect(practice).toContain("Cancel leaves the current selection intact");
     expect(practice).toContain("Prep cannot change after capture starts");
     for (const phrase of [
-      "private personal Teams meeting alone",
+      "private Google Meet or personal Teams meeting alone",
       "Start live capture** once",
       "end the practice meeting for everyone or remove the bot",
       "confirm the bot departs",

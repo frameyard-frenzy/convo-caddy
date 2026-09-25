@@ -91,7 +91,7 @@ describe("public README onboarding", () => {
       "Choose prep…",
       "prep/TEMPLATE.md",
       "prep/current",
-      "Personal Microsoft Teams meeting link",
+      "Microsoft Teams (personal)",
       "Start live capture",
       "Admission is recording authorization",
       "Quitting Convo Caddy does not remove a meeting bot",

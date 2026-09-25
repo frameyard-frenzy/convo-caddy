@@ -1,5 +1,5 @@
 import type { ContentEdit } from "../domain/content-edit.js";
-import type { SessionState } from "../domain/types.js";
+import type { MeetingPlatform, SessionState } from "../domain/types.js";
 import type {
   InputResult,
   SimulationAction,
@@ -184,6 +184,7 @@ export function startNextSession(): Promise<{
 }
 
 export async function startRecallCapture(input: {
+  meetingPlatform: MeetingPlatform;
   meetingUrl: string;
   displayName?: string;
 }): Promise<StartRecallCaptureResult> {

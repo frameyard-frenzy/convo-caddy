@@ -22,9 +22,14 @@ export const recallCaptureStatusSchema = z.enum([
   "failed",
 ]);
 
+export const meetingPlatformSchema = z.enum([
+  "microsoft_teams_personal",
+  "google_meet",
+]);
+
 const liveReadyCaptureSchema = z.strictObject({
   mode: z.literal("live_ready"),
-  meetingPlatform: z.literal("microsoft_teams_personal"),
+  meetingPlatform: meetingPlatformSchema,
   recording: z.strictObject({ location: z.null(), retention: z.null() }),
 });
 
@@ -98,7 +103,7 @@ const recallCaptureShape = {
     botId: z.string().min(1).nullable(),
     recordingId: z.string().min(1).nullable(),
   }),
-  meetingPlatform: z.literal("microsoft_teams_personal"),
+  meetingPlatform: meetingPlatformSchema,
   lastEventAt: z.iso.datetime(),
   error: z.string().min(1).nullable(),
 } as const;
@@ -141,4 +146,5 @@ export const UNVERIFIED_RECALL_RECORDING_RETENTION = {
 
 export type RecallRegion = z.infer<typeof recallRegionSchema>;
 export type RecallCaptureStatus = z.infer<typeof recallCaptureStatusSchema>;
+export type MeetingPlatform = z.infer<typeof meetingPlatformSchema>;
 export type CaptureState = z.infer<typeof captureStateSchema>;

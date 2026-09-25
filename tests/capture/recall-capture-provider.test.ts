@@ -12,6 +12,29 @@ const webhookUrl =
 const operationId = "00000000-0000-4000-8000-000000000099";
 
 describe("RecallCaptureProvider", () => {
+  it("forwards a Google Meet URL through the existing create-bot request", async () => {
+    const meetUrl = "https://meet.google.com/abc-defg-hij?authuser=0";
+    const fetchMock = vi.fn<typeof fetch>(async () =>
+      Response.json({ id: "bot-meet-fixture" }, { status: 201 }),
+    );
+    const provider = new RecallCaptureProvider({
+      apiKey: "fixture-key",
+      region: "us-west-2",
+      webhookUrl,
+      fetchImpl: fetchMock,
+    });
+
+    await provider.createBot({
+      meetingUrl: meetUrl,
+      operationId: crypto.randomUUID(),
+    });
+
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body)),
+    ).toMatchObject({
+      meeting_url: meetUrl,
+    });
+  });
   it("creates one zero-retention personal Teams bot and parses the observed response", async () => {
     const rawResponse = readFileSync(
       new URL(

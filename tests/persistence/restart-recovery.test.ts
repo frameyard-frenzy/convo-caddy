@@ -328,6 +328,25 @@ describe("session restart recovery", () => {
     });
   });
 
+  it("persists and restores Google Meet as the selected platform", async () => {
+    const repository = createRepository();
+    const first = createRecallService(repository, "first-meet");
+    const started = await first.startRecallCapture({
+      meetingPlatform: "google_meet",
+      meetingUrl: "https://meet.google.com/abc-defg-hij",
+    });
+
+    expect(started.ok).toBe(true);
+    const restarted = createRecallService(
+      new FileSessionRepository(repository.dataRoot),
+      "restarted-meet",
+    );
+    expect(restarted.getSnapshot().capture).toMatchObject({
+      mode: "recall",
+      meetingPlatform: "google_meet",
+    });
+  });
+
   it("does not persist an in-flight mutation receipt after reset", async () => {
     const repository = createRepository();
     const provider = new DeferredProvider();
