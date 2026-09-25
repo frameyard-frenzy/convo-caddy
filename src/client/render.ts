@@ -2,6 +2,7 @@ import { isPreparation } from "../domain/session-lifecycle.js";
 import type { ContentEditor } from "./content-editor.js";
 import type {
   CheckableItem,
+  MeetingPlatform,
   NoteItem,
   PreparedTopic,
   SessionState,
@@ -51,6 +52,7 @@ export type RenderModel = {
   sessionHistory: WorkspaceSessionSummary[];
   startingNextSession: boolean;
   captureMeetingUrl: string;
+  captureMeetingPlatform?: MeetingPlatform;
   captureDisplayName: string;
   startingCapture: boolean;
   runtimeReadiness: RuntimeReadiness | null;
@@ -70,8 +72,13 @@ export type RenderHandlers = {
   controlSimulation(action: SimulationAction): void;
   submitInput(input: string): void;
   startNextSession(): void;
-  startRecallCapture(meetingUrl: string, displayName: string): void;
+  startRecallCapture(
+    meetingPlatform: MeetingPlatform,
+    meetingUrl: string,
+    displayName: string,
+  ): void;
   updateCaptureMeetingUrl(meetingUrl: string): void;
+  updateCaptureMeetingPlatform(meetingPlatform: MeetingPlatform): void;
   updateCaptureDisplayName(displayName: string): void;
   retryHermes?(): void;
   setRuntimeDiagnosticsOpen(open: boolean): void;
@@ -432,15 +439,38 @@ function renderLiveCapture(
   handlers: RenderHandlers,
 ): HTMLElement {
   const section = createSection("Live capture", "live-capture");
+  const meetingPlatform =
+    model.captureMeetingPlatform ?? "microsoft_teams_personal";
+  const isMeet = meetingPlatform === "google_meet";
   section.append(
     createElement(
       "p",
       "capture-guidance",
-      "Paste the personal Microsoft Teams meeting link. Nothing starts until you press the button.",
+      `Paste the ${isMeet ? "Google Meet" : "personal Microsoft Teams"} meeting link. Nothing starts until you press the button.`,
     ),
   );
   const form = createElement("form", "live-capture-form");
   const primaryRow = createElement("div", "capture-primary-row");
+  const platformField = createElement(
+    "div",
+    "capture-meeting-field capture-platform-field",
+  );
+  const platformLabel = createElement("label", undefined, "Meeting platform");
+  platformLabel.htmlFor = "capture-meeting-platform";
+  const platform = document.createElement("select");
+  platform.id = "capture-meeting-platform";
+  platform.name = "meetingPlatform";
+  platform.append(
+    new Option("Microsoft Teams (personal)", "microsoft_teams_personal"),
+    new Option("Google Meet", "google_meet"),
+  );
+  platform.value = meetingPlatform;
+  platform.disabled =
+    model.startingCapture || model.state.capture.mode === "recall";
+  platform.addEventListener("change", () => {
+    handlers.updateCaptureMeetingPlatform(platform.value as MeetingPlatform);
+  });
+  platformField.append(platformLabel, platform);
   const meetingField = createElement(
     "div",
     "capture-meeting-field capture-primary-field",
@@ -448,7 +478,9 @@ function renderLiveCapture(
   const meetingLabel = createElement(
     "label",
     undefined,
-    "Personal Microsoft Teams meeting link",
+    isMeet
+      ? "Google Meet meeting link"
+      : "Personal Microsoft Teams meeting link",
   );
   meetingLabel.htmlFor = "capture-meeting-url";
   const meetingUrl = document.createElement("input");
@@ -456,7 +488,9 @@ function renderLiveCapture(
   meetingUrl.name = "meetingUrl";
   meetingUrl.type = "url";
   meetingUrl.required = true;
-  meetingUrl.placeholder = "https://teams.live.com/meet/…";
+  meetingUrl.placeholder = isMeet
+    ? "https://meet.google.com/abc-defg-hij"
+    : "https://teams.live.com/meet/…";
   meetingUrl.value = model.captureMeetingUrl;
   meetingUrl.disabled = model.startingCapture;
   meetingField.append(meetingLabel, meetingUrl);
@@ -479,7 +513,7 @@ function renderLiveCapture(
     updateSubmit();
   });
   updateSubmit();
-  primaryRow.append(meetingField, submit);
+  primaryRow.append(platformField, meetingField, submit);
 
   const secondaryRow = createElement("div", "capture-secondary-row");
   const nameField = createElement(
@@ -517,7 +551,11 @@ function renderLiveCapture(
   }
   form.addEventListener("submit", (event) => {
     event.preventDefault();
-    handlers.startRecallCapture(meetingUrl.value, displayName.value);
+    handlers.startRecallCapture(
+      meetingPlatform,
+      meetingUrl.value,
+      displayName.value,
+    );
   });
   const protocol = createElement("div", "capture-protocol");
   protocol.append(
@@ -525,7 +563,7 @@ function renderLiveCapture(
     createElement(
       "p",
       "capture-protocol-copy",
-      "The visible Convo Caddy bot waits in the Teams lobby. Admitting it authorizes recording and transcription.",
+      `The visible Convo Caddy bot waits for admission in ${isMeet ? "Google Meet" : "the Teams lobby"}. Admitting it authorizes recording and transcription.`,
     ),
     createElement(
       "p",
@@ -613,7 +651,7 @@ function formatRuntimeState(state: RuntimeReadiness["state"]): string {
   return {
     setup_required: "Configuration required",
     starting: "Starting meeting connections…",
-    ready: "Ready for a Teams meeting",
+    ready: "Ready for a meeting",
     ready_without_marty: "Ready for capture; Assistant is unavailable",
     needs_attention: "Meeting connections need attention",
     interview_active: "Interview active",

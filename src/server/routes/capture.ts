@@ -1,8 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
 import type { SessionService } from "../session-service.js";
+import { meetingPlatformSchema } from "../../domain/capture.js";
 
 const startCaptureSchema = z.strictObject({
+  meetingPlatform: meetingPlatformSchema.default("microsoft_teams_personal"),
   meetingUrl: z.string().url(),
   displayName: z.string().trim().min(1).max(80).optional(),
 });
@@ -14,7 +16,8 @@ export function createCaptureRouter(service: SessionService): Router {
     const input = startCaptureSchema.safeParse(request.body);
     if (!input.success) {
       response.status(400).json({
-        error: "A personal Microsoft Teams meeting link is required.",
+        error:
+          "Choose a supported meeting platform and enter its meeting link.",
       });
       return;
     }

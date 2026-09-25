@@ -26,7 +26,11 @@ describe("POST /api/capture/recall/start", () => {
 
     const response = await request(context.app)
       .post("/api/capture/recall/start")
-      .send({ meetingUrl, displayName: "  Supplier quality case  " });
+      .send({
+        meetingPlatform: "microsoft_teams_personal",
+        meetingUrl,
+        displayName: "  Supplier quality case  ",
+      });
 
     expect(response.status).toBe(201);
     expect(context.captureProvider.invocationCount).toBe(1);
@@ -74,6 +78,36 @@ describe("POST /api/capture/recall/start", () => {
     });
     expect(JSON.stringify(response.body)).not.toContain(meetingUrl);
   });
+
+  it("uses the same provider path for a Google Meet meeting", async () => {
+    const context = createTestContext();
+    const meetingUrl = "https://meet.google.com/abc-defg-hij?authuser=0";
+
+    const response = await request(context.app)
+      .post("/api/capture/recall/start")
+      .send({ meetingPlatform: "google_meet", meetingUrl });
+
+    expect(response.status).toBe(201);
+    expect(context.captureProvider.invocationCount).toBe(1);
+    expect(context.captureProvider.lastInput).toMatchObject({ meetingUrl });
+    expect(response.body.state.capture.meetingPlatform).toBe("google_meet");
+  });
+
+  it.each([
+    ["google_meet", "https://teams.live.com/meet/123456789"],
+    ["microsoft_teams_personal", "https://meet.google.com/abc-defg-hij"],
+  ])(
+    "rejects a %s platform mismatch without creating a bot",
+    async (meetingPlatform, meetingUrl) => {
+      const context = createTestContext();
+      const response = await request(context.app)
+        .post("/api/capture/recall/start")
+        .send({ meetingPlatform, meetingUrl });
+
+      expect(response.status).toBe(400);
+      expect(context.captureProvider.invocationCount).toBe(0);
+    },
+  );
 
   it("rejects business Teams and non-Teams meeting links", async () => {
     for (const meetingUrl of [

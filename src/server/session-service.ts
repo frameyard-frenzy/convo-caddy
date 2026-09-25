@@ -28,6 +28,7 @@ import type {
   CaptureState,
   ChatEntry,
   CheckableItem,
+  MeetingPlatform,
   NoteItem,
   PreparedTopic,
   RecallCaptureStatus,
@@ -43,7 +44,7 @@ import {
 import { UNVERIFIED_RECALL_RECORDING_RETENTION } from "../domain/capture.js";
 import {
   type CaptureProvider,
-  isPersonalTeamsMeetingUrl,
+  isMeetingUrlForPlatform,
 } from "./capture/capture-provider.js";
 import { buildMartyContext } from "./marty/context-builder.js";
 import { FakeMartyProvider } from "./marty/fake-marty-provider.js";
@@ -205,6 +206,7 @@ export type InputResult = {
 export type SimulationAction = "start" | "pause" | "resume" | "step" | "reset";
 export type SessionListener = (state: SessionState) => void;
 export type StartRecallCaptureInput = {
+  meetingPlatform?: MeetingPlatform;
   meetingUrl: string;
   displayName?: string;
 };
@@ -532,10 +534,13 @@ export class SessionService {
         "Retry Save before starting capture.",
       );
     const generation = this.#generation;
-    if (!isPersonalTeamsMeetingUrl(input.meetingUrl)) {
+    const meetingPlatform = input.meetingPlatform ?? "microsoft_teams_personal";
+    if (!isMeetingUrlForPlatform(meetingPlatform, input.meetingUrl)) {
       return this.#captureStartFailure(
         "invalid",
-        "A personal Microsoft Teams meeting link is required.",
+        meetingPlatform === "google_meet"
+          ? "A Google Meet link matching the selected platform is required."
+          : "A personal Microsoft Teams link matching the selected platform is required.",
       );
     }
     const displayName = input.displayName || null;
@@ -658,7 +663,7 @@ export class SessionService {
         botId: null,
         recordingId: null,
       },
-      meetingPlatform: "microsoft_teams_personal",
+      meetingPlatform,
       recording: {
         location: "recall_ai",
         retention: UNVERIFIED_RECALL_RECORDING_RETENTION,

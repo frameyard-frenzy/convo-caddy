@@ -76,7 +76,7 @@ Expected: the command finishes successfully and creates the DMG under `out/make/
 
 ### 8b. Finish any active capture
 
-**Interview Mac:** if an older Caddy is capturing a meeting, end that meeting in Teams and wait for Caddy to finish saving. If no capture is active, continue.
+**Interview Mac:** if an older Caddy is capturing a meeting, end that meeting in Meet or Teams and wait for Caddy to finish saving. If no capture is active, continue.
 
 Expected: no active meeting bot or unfinished save. Stop if capture or saving is unresolved. Next: 9a.
 

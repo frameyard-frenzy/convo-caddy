@@ -52,7 +52,7 @@ Preserve these unless Mo explicitly changes them:
 - All real MVP reasoning calls route through the user-selected Hermes profile; Convo Caddy stores no underlying model-provider credential and has no direct model SDK or fallback provider. The call-count invariant is measured at the authenticated Convo Caddy-to-Hermes request boundary; Hermes may retain its normal internal retry and provider-fallback behavior.
 - Participant testimony, Mo’s notes, and Marty’s responses remain distinguishable.
 - Every transcript-related mark has an interview-relative timestamp and stable transcript reference.
-- Starting Recall capture sends the visible bot only to the Teams lobby. Mo authorizes recording and transcription by admitting it; no spoken phrase or application checkbox is required. On admission, the bot displays “Convo Caddy is recording and transcribing this conversation.” for ten seconds, with the same Teams chat message as a best-effort fallback.
+- Starting Recall capture sends the visible bot to the selected Google Meet or personal Teams meeting to await admission. Mo authorizes recording and transcription by admitting it; no spoken phrase or application checkbox is required. On admission, the bot displays “Convo Caddy is recording and transcribing this conversation.” for ten seconds, with the same chat message as a best-effort fallback.
 - Normal use must feel like listening to a person, not operating Convo Caddy.
 
 ## Phase and scope discipline

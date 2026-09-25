@@ -1,6 +1,6 @@
 # Convo Caddy
 
-Keep your interview questions and follow-ups beside a Teams call, so you can listen to the person instead of operating software. Convo Caddy transcribes an admitted meeting, keeps your marks and notes, and asks your existing Hermes assistant for help only when you request it.
+Keep your interview questions and follow-ups beside a Google Meet or personal Microsoft Teams call, so you can listen to the person instead of operating software. Convo Caddy transcribes an admitted meeting, keeps your marks and notes, and asks your existing Hermes assistant for help only when you request it.
 
 ## For people
 
@@ -9,12 +9,12 @@ Keep your interview questions and follow-ups beside a Teams call, so you can lis
 - An Apple Silicon Mac with macOS 14 or later.
 - Hermes already running and used daily, on this Mac or another Mac you can access.
 - Only for two Macs: [Tailscale](docs/hermes-connection-setup.md#1-prepare-before-leaving-the-hermes-mac) installed and connected on both Macs, using the same Tailscale account. The Macs can be in different locations and on different Wi-Fi networks.
-- Personal Microsoft Teams; Recall US West and ngrok accounts (create them below if needed).
+- Google Meet or personal Microsoft Teams; Recall US West and ngrok accounts (create them below if needed).
 - An internet connection. Transcription is in English; provider usage may cost money.
 
 ### Install
 
-**Download:** [Convo Caddy 0.2.0 — unnotarized alpha](https://github.com/frameyard-frenzy/convo-caddy/releases/tag/v0.2.0) is available for Apple Silicon Macs running macOS 14 or later. Download `Convo-Caddy-0.2.0-arm64.dmg`; checksums and a source manifest are attached to the release. This alpha is ad-hoc signed, **not Developer ID signed or notarized by Apple**, and macOS may block first launch.
+**Download:** [Convo Caddy 0.2.0 — unnotarized alpha](https://github.com/frameyard-frenzy/convo-caddy/releases/tag/v0.2.0) is available for Apple Silicon Macs running macOS 14 or later. That published installer supports personal Microsoft Teams only; Google Meet support is currently source-only pending a later release. Download `Convo-Caddy-0.2.0-arm64.dmg`; checksums and a source manifest are attached to the release. This alpha is ad-hoc signed, **not Developer ID signed or notarized by Apple**, and macOS may block first launch.
 
 DMG SHA-256: `df1a068a0146c8fda50dc8a09d66209276f70a3733b9a7e5c2faabd8b78fc71e`.
 
@@ -63,7 +63,7 @@ Click **Test Recall & ngrok** in Caddy. **Synthetic checks passed** means the fo
 
 #### Public callback recovery
 
-Read the four component results in order. If Recall authentication, the local callback, and exact ngrok endpoint pass but a known attempted public HTTP/transport probe fails, Caddy shows an amber **Warning — Setup not fully verified** instead of declaring the provider path broken. This probe starts on this Mac; Recall delivery starts on Recall’s network, so one path can fail while the other works. Wi-Fi or ISP filtering, DNS/TLS, a VPN/proxy, or firewall policy are possibilities, not diagnoses; a real ngrok tunnel, domain, redirect, or access-policy problem is also possible. Keep the entered keys and use **Copy the secret-free diagnostic summary for your agent** to share secret-free outcomes and limits. It contains no hostname, URL, credential, saved setting or raw error. Before relying on a warning setup, complete one [private, human-operated Teams practice call](docs/practice-interview.md)—alone is fine—and confirm actual live transcript text appears in Caddy.
+Read the four component results in order. If Recall authentication, the local callback, and exact ngrok endpoint pass but a known attempted public HTTP/transport probe fails, Caddy shows an amber **Warning — Setup not fully verified** instead of declaring the provider path broken. This probe starts on this Mac; Recall delivery starts on Recall’s network, so one path can fail while the other works. Wi-Fi or ISP filtering, DNS/TLS, a VPN/proxy, or firewall policy are possibilities, not diagnoses; a real ngrok tunnel, domain, redirect, or access-policy problem is also possible. Keep the entered keys and use **Copy the secret-free diagnostic summary for your agent** to share secret-free outcomes and limits. It contains no hostname, URL, credential, saved setting or raw error. Before relying on a warning setup, complete one [private, human-operated practice call](docs/practice-interview.md)—alone is fine—and confirm actual live transcript text appears in Caddy.
 
 - For DNS or unreachable-network results, confirm ordinary connectivity and compare the check once on another trusted network.
 - For a certificate-verification result, check the Mac’s clock and the network’s trust or managed-security policy. Do not bypass certificate verification.
@@ -90,13 +90,13 @@ After finishing the guide, continue below once. Your unsaved setup entries remai
 
 After configuring **ALL connection fields**—both Recall secrets, ngrok domain and authtoken, Hermes mode, key, path, ports, model and remote SSH address when needed—click **Save**. A Hermes-only form cannot be saved. Settings save to macOS Keychain and the app reloads. **Test assistant succeeded** does not mean Save succeeded: on a failed or unconfirmed Save, keep the draft and follow the displayed action/code rather than resetting the form.
 
-When prompted, choose **Documents** as the workspace parent. Caddy creates **Convo Caddy Workspace** there for your prep and finished conversations. Setup is complete when the workspace opens. Give each interview a unique **Saved interview name** to use that name for its saved folder and prep archive. **History** shows the latest finished name; **Workspace → Show Workspace in Finder** provides access to all saved files. You can now [prepare and directly edit an interview](docs/prep-format.md). To relocate all workspace files later, use **Workspace → Move workspace…** ([move and recovery](docs/workspace-move.md)); the [optional practice interview](docs/practice-interview.md) walks through a synthetic prep and a separately authorized Teams capture. Admitting the visible bot authorizes recording/transcription; do so only with everyone's agreement.
+When prompted, choose **Documents** as the workspace parent. Caddy creates **Convo Caddy Workspace** there for your prep and finished conversations. Setup is complete when the workspace opens. Give each interview a unique **Saved interview name** to use that name for its saved folder and prep archive. **History** shows the latest finished name; **Workspace → Show Workspace in Finder** provides access to all saved files. You can now [prepare and directly edit an interview](docs/prep-format.md). To relocate all workspace files later, use **Workspace → Move workspace…** ([move and recovery](docs/workspace-move.md)); the [optional practice interview](docs/practice-interview.md) walks through a synthetic prep and a separately authorized Meet or personal Teams capture. Choose the platform matching the meeting link. Admitting the visible bot authorizes recording/transcription; do so only with everyone's agreement. A bot counts as a participant, so Google Meet's free three-participant/60-minute limit applies to interviewer, guest, and bot; native Google transcription is not required.
 
 ### Uninstall
 
 Use the graphical uninstaller to remove Caddy's app, private app data and saved Caddy credentials. Dragging only the app to Trash does not perform that cleanup.
 
-1. If capture is active, end the meeting in Teams or remove the visible bot there, and let Caddy finish saving. Uninstall does not stop a remote recording.
+1. If capture is active, end the meeting in Meet or Teams, or remove the visible bot there, and let Caddy finish saving. Uninstall does not stop a remote recording.
 2. Choose **Convo Caddy → Quit Convo Caddy**.
 3. In Finder → Downloads, double-click the retained installer DMG (or download it again from the release page). In its **Remove Convo Caddy** area, double-click **Uninstall Convo Caddy**.
 4. If a workspace exists, read **“Also delete your workspace?”** and the displayed folder path. **No** is the default: it uninstalls Caddy and keeps your workspace. **Yes** also permanently deletes the entire displayed, verified dedicated workspace folder, never its parent. Both remove the app, private app data and saved Caddy credentials. With no workspace, the confirmation is titled **Uninstall Convo Caddy** with **Uninstall / Cancel**; choose **Uninstall** to remove the app, private app data and saved Caddy credentials. No workspace question is shown. **Cancel** closes this dialog without starting removal.

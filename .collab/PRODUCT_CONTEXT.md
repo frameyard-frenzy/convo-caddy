@@ -4,11 +4,11 @@ Current behavior, not authorization for operational work.
 
 ## One sentence
 
-Convo Caddy is a calm, nearly hands-off Microsoft Teams companion that keeps one interviewer oriented while a hidden transcript preserves the conversation underneath.
+Convo Caddy is a calm, nearly hands-off Google Meet and personal Microsoft Teams companion that keeps one interviewer oriented while a hidden transcript preserves the conversation underneath.
 
 ## Intended portable-MVP user
 
-The intended MVP user is a technical interviewer on Apple Silicon macOS who uses Microsoft Teams, already has Hermes Agent, and is willing to configure personal Recall.ai and ngrok accounts. Supporting that deliberately narrow audience is enough for the MVP. 
+The intended MVP user is a technical interviewer on Apple Silicon macOS who uses Google Meet or personal Microsoft Teams, already has Hermes Agent, and is willing to configure personal Recall.ai and ngrok accounts. Supporting that deliberately narrow audience is enough for the MVP.
 
 The MVP remains purposeful rather than generic. It does not support Zoom, Google Meet, multiple transcription languages or Recall regions, direct model-provider integrations, arbitrary remote agent endpoints, additional commands, provider plug-ins, or a generic notes mode. Roadmap presence never authorizes those additions.
 
@@ -231,9 +231,9 @@ Caddy sends no continuity headers, performs no automatic inference retry, and
 never cycles the service. Marty is Mo's custom AI agent built on Hermes;
 other users choose their own agent.
 
-Starting Recall capture sends the visible bot to the Teams lobby. Admission
+Starting Recall capture sends the visible bot to the selected Google Meet or personal Teams meeting to await admission. Admission
 by the interviewer authorizes recording/transcription. On admission, the bot
 displays “Convo Caddy is recording and transcribing this conversation.” for ten
-seconds, with the same Teams chat notice as best-effort fallback. The application
+seconds, with the same chat notice as best-effort fallback. The application
 requests no recording-media retention; provider confirmation and dashboard
 metadata retention remain distinct and unverified. No recording is downloaded.

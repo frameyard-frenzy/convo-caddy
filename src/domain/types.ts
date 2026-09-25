@@ -7,6 +7,7 @@ export {
 } from "./capture.js";
 export type {
   CaptureState,
+  MeetingPlatform,
   RecallCaptureStatus,
   RecallRegion,
 } from "./capture.js";
