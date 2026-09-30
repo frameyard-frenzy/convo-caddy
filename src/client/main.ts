@@ -4,7 +4,7 @@ import "@fontsource-variable/instrument-sans";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import "./styles.css";
-import type { SessionState } from "../domain/types.js";
+import type { MeetingPlatform, SessionState } from "../domain/types.js";
 import type { SimulationAction } from "../server/session-service.js";
 import {
   controlSimulation,
@@ -75,6 +75,7 @@ let pendingMutation: { input: string; id: string } | null = null;
 let sessionHistory: WorkspaceSessionSummary[] = [];
 let startingNextSession = false;
 let captureMeetingUrl = "";
+let captureMeetingPlatform: MeetingPlatform = "microsoft_teams_personal";
 let captureDisplayName = "";
 let startingCapture = false;
 let runtimeReadiness: RuntimeReadiness | null = null;
@@ -104,6 +105,7 @@ function render(): void {
       sessionHistory,
       startingNextSession,
       captureMeetingUrl,
+      captureMeetingPlatform,
       captureDisplayName:
         editor.metadata?.displayName.text ?? captureDisplayName,
       startingCapture,
@@ -127,6 +129,10 @@ function render(): void {
       startRecallCapture: runStartRecallCapture,
       updateCaptureMeetingUrl: (meetingUrl) => {
         captureMeetingUrl = meetingUrl;
+      },
+      updateCaptureMeetingPlatform: (meetingPlatform) => {
+        captureMeetingPlatform = meetingPlatform;
+        render();
       },
       updateCaptureDisplayName: (displayName) => {
         captureDisplayName = displayName;
@@ -242,6 +248,7 @@ function restoreInputFocus(focus: InputFocus | null): void {
 }
 
 async function runStartRecallCapture(
+  meetingPlatform: MeetingPlatform,
   meetingUrl: string,
   displayName: string,
 ): Promise<void> {
@@ -254,6 +261,7 @@ async function runStartRecallCapture(
     await flushEdits();
     const savedDisplayName = editor.metadata?.displayName.text ?? displayName;
     const result = await startRecallCapture({
+      meetingPlatform,
       meetingUrl,
       ...(savedDisplayName ? { displayName: savedDisplayName } : {}),
     });
@@ -587,6 +595,8 @@ function errorMessage(caught: unknown): string {
 try {
   const initial = await getSession();
   state = initial.state;
+  if (state.capture.mode !== "simulation")
+    captureMeetingPlatform = state.capture.meetingPlatform;
   if (
     !["complete", "finalizing", "needs_attention"].includes(
       state.lifecycle.finalization.state,
@@ -614,6 +624,8 @@ try {
       nextState.lifecycle.finalization.state !==
         state.lifecycle.finalization.state;
     state = nextState;
+    if (state.capture.mode === "recall")
+      captureMeetingPlatform = state.capture.meetingPlatform;
     render();
     maybeFinish();
     if (shouldRefreshHistory) {

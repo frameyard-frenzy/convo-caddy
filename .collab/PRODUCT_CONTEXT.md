@@ -4,13 +4,13 @@ Current behavior, not authorization for operational work.
 
 ## One sentence
 
-Convo Caddy is a calm, nearly hands-off Microsoft Teams companion that keeps one interviewer oriented while a hidden transcript preserves the conversation underneath.
+Convo Caddy is a calm, nearly hands-off Google Meet and personal Microsoft Teams companion that keeps one interviewer oriented while a hidden transcript preserves the conversation underneath.
 
 ## Intended portable-MVP user
 
-The intended MVP user is a technical interviewer on Apple Silicon macOS who uses Microsoft Teams, already has Hermes Agent, and is willing to configure personal Recall.ai and ngrok accounts. Supporting that deliberately narrow audience is enough for the MVP. 
+The intended MVP user is a technical interviewer on Apple Silicon macOS who uses Google Meet or personal Microsoft Teams, already has Hermes Agent, and is willing to configure personal Recall.ai and ngrok accounts. Supporting that deliberately narrow audience is enough for the MVP.
 
-The MVP remains purposeful rather than generic. It does not support Zoom, Google Meet, multiple transcription languages or Recall regions, direct model-provider integrations, arbitrary remote agent endpoints, additional commands, provider plug-ins, or a generic notes mode. Roadmap presence never authorizes those additions.
+The MVP remains purposeful rather than generic. It does not support Zoom, multiple transcription languages or Recall regions, direct model-provider integrations, arbitrary remote agent endpoints, additional commands, provider plug-ins, or a generic notes mode. Roadmap presence never authorizes those additions.
 
 ## Editable prep and workspace relocation — current authorization
 
@@ -42,7 +42,7 @@ No workspace or legacy private bytes are removed because time passes. The prior 
 
 The uninstaller presents one primary “Also delete your workspace?” dialog when a workspace exists: No / Yes / Cancel, with No default. That dialog grants app/private-content/credential removal consent and shows the exact existing workspace path and whole-folder scope. Yes additionally confirms deletion of a verified dedicated child, never its parent. No keeps an external workspace in place. With no workspace after interrupted-inventory reconciliation, show an ordinary “Uninstall Convo Caddy” confirmation with Uninstall / Cancel and no workspace question. Only Uninstall proceeds with private cleanup; Cancel and unrecognized responses do not execute or grant workspace deletion consent. There is no introductory or trailing confirmation. The whole private Convo Caddy support root is normally removed, including unknown private contents; missing/null workspace preferences do not change that rule. Known nested legacy or saved workspaces must be preserved outside deletion roots before keep can complete. Backend and UI containment compare filesystem identity, including case aliases. Ambiguous older external workspaces remain untouched, with actionable keep-only removal and no automatic migration/adoption. Deletion ownership is revalidated with inventory under the existing lock; retained paths are checked before reporting success.
 
-Interview checkpoints, including idle, stale, malformed, and unfinished states, are private content authorized for deletion with either choice. They never mandate copying the entire Support root or a preservation acknowledgment. Recognized non-ended Recall state with a bot ID adds a concise nonblocking Teams reminder; it does not prove the bot remains active and no provider is contacted. Known nested requested-kept workspaces still require preservation. An interrupted **uninstall** journal remains distinct: fresh primary consent, current inventory, and existing saved-workspace recovery checks are required; Cancel retains the journal. Retry reconciles outstanding journal targets before fresh consent and again under the maintenance lock, so deleting Support/preferences cannot erase a remaining dedicated workspace from discovery. Its exact path is shown for fresh No/Yes consent; old intent never authorizes automatic deletion. Matching identity and dedicated ownership are required; changed or unverified targets block without replacing the journal. Already-missing targets are not claimed retained. Optional workspace metadata in schema-v2 journals preserves discovery across further interruptions after No, while existing pending-copy plans and verified receipts remain protected.
+Interview checkpoints, including idle, stale, malformed, and unfinished states, are private content authorized for deletion with either choice. They never mandate copying the entire Support root or a preservation acknowledgment. Recognized non-ended Recall state with a bot ID adds a concise nonblocking meeting reminder; it does not prove the bot remains active and no provider is contacted. Known nested requested-kept workspaces still require preservation. An interrupted **uninstall** journal remains distinct: fresh primary consent, current inventory, and existing saved-workspace recovery checks are required; Cancel retains the journal. Retry reconciles outstanding journal targets before fresh consent and again under the maintenance lock, so deleting Support/preferences cannot erase a remaining dedicated workspace from discovery. Its exact path is shown for fresh No/Yes consent; old intent never authorizes automatic deletion. Matching identity and dedicated ownership are required; changed or unverified targets block without replacing the journal. Already-missing targets are not claimed retained. Optional workspace metadata in schema-v2 journals preserves discovery across further interruptions after No, while existing pending-copy plans and verified receipts remain protected.
 
 The Electron main process holds a shared native advisory lock before normal startup writes. The standalone uninstaller holds the same stable owner-private inode exclusively through preservation, deletion, and verification. Its control directory is outside removable app state and contains only the non-content lock marker plus a schema-versioned metadata-only journal while recovery is incomplete. It never contacts or changes Recall, ngrok, Teams, Hermes, SSH, or model providers.
 
@@ -210,7 +210,7 @@ The olive live-preparation banner retains its historical two-row right side: aut
 
 ## Connection storage and assistant boundary
 
-The Recall/ngrok setup test classifies exact component evidence. It succeeds only when Recall read-only authentication, the local signed callback, exact-domain ngrok startup, and the public synthetic callback all pass. Authentication rejection, unavailable Recall, failed prerequisites, inconsistent or unknown results, and mixed errors are blocking failures with expanded diagnostics. Only a known attempted public HTTP/transport failure after all prerequisites pass is an amber warning: the local-origin route is unverified, but Recall-originated delivery remains unknown. The warning immediately recommends one human-operated private Teams test that confirms actual live transcript text. Synthetic success does not verify real delivery, dashboard selections, matching workspace signing-secret ownership, or retention. The test remains advisory to Save and never bypasses capture startup safety.
+The Recall/ngrok setup test classifies exact component evidence. It succeeds only when Recall read-only authentication, the local signed callback, exact-domain ngrok startup, and the public synthetic callback all pass. Authentication rejection, unavailable Recall, failed prerequisites, inconsistent or unknown results, and mixed errors are blocking failures with expanded diagnostics. Only a known attempted public HTTP/transport failure after all prerequisites pass is an amber warning: the local-origin route is unverified, but Recall-originated delivery remains unknown. The warning immediately recommends one human-operated private Meet or personal Teams test that confirms actual live transcript text. Synthetic success does not verify real delivery, dashboard selections, matching workspace signing-secret ownership, or retention. The test remains advisory to Save and never bypasses capture startup safety.
 
 Current connection settings are strict schema v4 in owner-private
 `config/connections.json`. Generation-scoped secrets use macOS Keychain service
@@ -231,9 +231,9 @@ Caddy sends no continuity headers, performs no automatic inference retry, and
 never cycles the service. Marty is Mo's custom AI agent built on Hermes;
 other users choose their own agent.
 
-Starting Recall capture sends the visible bot to the Teams lobby. Admission
+Starting Recall capture sends the visible bot to the selected Google Meet or personal Teams meeting to await admission. Admission
 by the interviewer authorizes recording/transcription. On admission, the bot
 displays “Convo Caddy is recording and transcribing this conversation.” for ten
-seconds, with the same Teams chat notice as best-effort fallback. The application
+seconds, with the same chat notice as best-effort fallback. The application
 requests no recording-media retention; provider confirmation and dashboard
 metadata retention remain distinct and unverified. No recording is downloaded.

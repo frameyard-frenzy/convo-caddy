@@ -78,6 +78,7 @@ test("renders the Frameyard visual identity and prioritizes the Teams link", asy
 
   expect(layout).not.toBeNull();
   expect(layout?.primaryChildren).toEqual([
+    "capture-meeting-field capture-platform-field",
     "capture-meeting-field capture-primary-field",
     "primary-button capture-submit",
   ]);
@@ -374,6 +375,7 @@ test("uses Teams lobby admission as the live-capture authorization gate", async 
   await startCapture.click();
 
   expect(submittedBody).toEqual({
+    meetingPlatform: "microsoft_teams_personal",
     meetingUrl: "https://teams.live.com/meet/123456789?p=fixture",
   });
   await expect(page.getByTestId("capture-status")).toHaveText("Joining");

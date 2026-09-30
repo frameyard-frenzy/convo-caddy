@@ -252,14 +252,14 @@ function showCallbackReport(classified) {
     callbackReportResult(classified),
     callbackReportLimits(classified),
     callbackReportNextAction(classified),
-    ...(severity === "warning" ? ["Recommended next action: make one real private Teams test call—alone is fine—before relying on this setup; admit the visible bot deliberately and confirm live transcript text appears in Caddy."] : []),
+    ...(severity === "warning" ? ["Recommended next action: make one real private Meet or personal Teams test call—alone is fine—before relying on this setup; admit the visible bot deliberately and confirm live transcript text appears in Caddy."] : []),
     "Safety: do not disable protection globally, dump credentials, or retry until green."
   ]);
 }
 byId("test-connections").addEventListener("click", () => run("recall", "Checking…", () => request("/api/setup/connections/test", {method:"POST", body:JSON.stringify(recallPayload())}), value => {
   const classified = classifyConnectionResult(value), result = classified.value;
   const failureTitle = result.recallCredentials.state === "authentication_rejected" ? "Recall authentication was rejected — check the API key and US West workspace." : result.recallCredentials.state === "unavailable" ? "Recall authentication could not be verified — retry, then check network or Recall service availability." : "Connection checks failed — review the expanded diagnostics for the first blocking step.";
-  const text = classified.severity === "success" ? "Synthetic checks passed" : classified.severity === "warning" ? "Setup not fully verified. Make a solo Teams call and check that transcript text appears." : failureTitle;
+  const text = classified.severity === "success" ? "Synthetic checks passed" : classified.severity === "warning" ? "Setup not fully verified. Make a solo Meet or personal Teams call and check that transcript text appears." : failureTitle;
   setOutcome("recall", classified.severity, text);
   byId("recall-details").open = classified.severity === "failure";
   details("recall", ["Recall credentials: " + String(result.recallCredentials.state).replaceAll("_"," "), "Local callback: " + callbackDetail(result.localWebhook), "ngrok endpoint: " + callbackDetail(result.ngrokEndpoint), "Public callback: " + callbackDetail(result.publicWebhook), "Synthetic only: no bot or live delivery was verified."]);

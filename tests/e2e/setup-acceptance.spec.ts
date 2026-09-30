@@ -864,7 +864,7 @@ test("failed public route produces a copyable private-safe report and edits stal
     "Warning — Setup not fully verified",
   );
   await expect(page.locator("#recall-outcome")).toContainText(
-    "solo Teams call",
+    "solo Meet or personal Teams call",
   );
   await expect(page.locator("#recall-details")).not.toHaveAttribute("open", "");
   const report = page.locator("#callback-report");
@@ -877,7 +877,9 @@ test("failed public route produces a copyable private-safe report and edits stal
   );
   await expect(report).toHaveValue(/does not prove Recall delivery/);
   await expect(report).toHaveValue(/Overall severity: warning/);
-  await expect(report).toHaveValue(/real private Teams test call/);
+  await expect(report).toHaveValue(
+    /real private Meet or personal Teams test call/,
+  );
   await expect(report).not.toHaveValue(
     /fixture\.ngrok|synthetic-.*canary|https:\/\//,
   );
@@ -916,7 +918,7 @@ test("authentication failure, unavailable Recall, and mixed failures remain bloc
     /Overall severity: failure/,
   );
   await expect(page.locator("#callback-report")).not.toHaveValue(
-    /real private Teams test call/,
+    /real private Meet or personal Teams test call/,
   );
 
   setup.setRecallCredentialState("unavailable");
@@ -1191,7 +1193,7 @@ test("mixed prerequisite failures dominate an attempted public failure", async (
   await expect(page.locator("#recall-outcome")).toContainText("failed");
   await expect(page.locator("#recall-outcome")).not.toContainText("Warning");
   await expect(page.locator("#callback-report")).not.toHaveValue(
-    /real private Teams test call/,
+    /real private Meet or personal Teams test call/,
   );
 });
 
@@ -1282,7 +1284,7 @@ test("revised setup keeps the warning concise and separates Save from Reset", as
   setup.setCallbackDiagnostic({ code: "connection_reset" });
   await page.locator("#test-connections").click();
   await expect(page.locator("#recall-outcome")).toHaveText(
-    "⚠ Warning — Setup not fully verified. Make a solo Teams call and check that transcript text appears.",
+    "⚠ Warning — Setup not fully verified. Make a solo Meet or personal Teams call and check that transcript text appears.",
   );
   await expect(page.locator("#callback-report")).not.toBeVisible();
   await expect(page.locator("#copy-callback-report")).toBeVisible();

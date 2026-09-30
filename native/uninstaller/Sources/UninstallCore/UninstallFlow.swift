@@ -35,7 +35,7 @@ public struct UninstallDialog: Equatable {
                     ? "\nYes permanently deletes the entire folder. No keeps it."
                     : "\nThis older workspace can only be kept. Choose No to uninstall."
             }
-            if current.possiblyUnfinishedCapture {details += "\n\nA recording may still be running. Check the meeting in Teams; uninstall does not stop it."}
+            if current.possiblyUnfinishedCapture {details += "\n\nA recording may still be running. Check the meeting app; uninstall does not stop it."}
             if interrupted {details += "\n\nThe previous uninstall was interrupted. Choose again to finish removing the remaining items."}
             let hasWorkspace = !current.workspaces.isEmpty
             let response=ui.ask(hasWorkspace

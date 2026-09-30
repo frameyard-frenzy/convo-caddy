@@ -35,7 +35,7 @@ requires manual recovery review; it is never resumed as whole-folder permission.
 Private interview checkpoints never require a backup or an acknowledgment before
 uninstall. The producer writes `active-session.json` even at fresh live-ready
 startup, before capture. Recognized non-ended Recall state with a bot ID adds a
-short nonblocking reminder to check Teams. It is not proof a recording is still
+short nonblocking reminder to check the meeting. It is not proof a recording is still
 running, and uninstall neither contacts a provider nor stops its recording.
 Idle, ended, malformed, and old pointer files alone add no capture warning.
 An interrupted **uninstall** journal remains protected and needs fresh consent in
@@ -59,7 +59,7 @@ request fresh approval.
 
 ### 1. Finish capture, identify owned processes, and quit
 
-1. End the meeting from Teams (or remove the visible bot there), confirm the bot
+1. End the meeting from Meet or Teams (or remove the visible bot there), confirm the bot
    has left, and let Convo Caddy finish saving. Quitting Convo Caddy does not
    remove the meeting bot.
 2. Open **Activity Monitor → View → All Processes, Hierarchically**. Identify the
